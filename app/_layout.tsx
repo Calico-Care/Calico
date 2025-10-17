@@ -12,6 +12,26 @@ import { ThemeToggle } from '@/components/nativewindui/ThemeToggle';
 import { cn } from '@/lib/cn';
 import { useColorScheme } from '@/lib/useColorScheme';
 import { NAV_THEME } from '@/theme';
+import * as Sentry from '@sentry/react-native';
+
+Sentry.init({
+  dsn: 'https://e6b1ecb60dc09016b1b2c9991c40b916@o4510205406281728.ingest.us.sentry.io/4510205414604800',
+
+  // Adds more context data to events (IP address, cookies, user, etc.)
+  // For more information, visit: https://docs.sentry.io/platforms/react-native/data-management/data-collected/
+  sendDefaultPii: true,
+
+  // Enable Logs
+  enableLogs: true,
+
+  // Configure Session Replay
+  replaysSessionSampleRate: 0.1,
+  replaysOnErrorSampleRate: 1,
+  integrations: [Sentry.mobileReplayIntegration(), Sentry.feedbackIntegration()],
+
+  // uncomment the line below to enable Spotlight (https://spotlightjs.com)
+  // spotlight: __DEV__,
+});
 
 export {
   // Catch any errors thrown by the Layout component.
@@ -20,7 +40,7 @@ export {
 
 const isIos26 = Platform.select({ default: false, ios: Device.osVersion?.startsWith('26.') });
 
-export default function RootLayout() {
+export default Sentry.wrap(function RootLayout() {
   const { colorScheme, isDarkColorScheme } = useColorScheme();
 
   return (
@@ -42,7 +62,7 @@ export default function RootLayout() {
       {/* </ExampleProvider> */}
     </>
   );
-}
+});
 
 const INDEX_OPTIONS = {
   headerLargeTitle: true,

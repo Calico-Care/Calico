@@ -5,6 +5,7 @@ import * as React from 'react';
 import { Linking, useWindowDimensions, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { SearchBarProps } from 'react-native-screens';
+import * as Sentry from '@sentry/react-native';
 
 import { useNavigation } from '@react-navigation/native';
 
@@ -130,6 +131,25 @@ function Card({ children, title }: { children: React.ReactNode; title: string })
 }
 
 const COMPONENTS: ComponentItem[] = [
+  {
+    name: 'Sentry Test',
+    component: function SentryTestButton() {
+      function onPress() {
+        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+        Sentry.captureException(new Error('First error'));
+      }
+      return (
+        <View className="items-center justify-center gap-4 p-4">
+          <Button onPress={onPress}>
+            <Text>Try!</Text>
+          </Button>
+          <Text variant="footnote" color="tertiary" className="text-center">
+            Tap to send a test error to Sentry
+          </Text>
+        </View>
+      );
+    },
+  },
   // {
   //   name: 'Button',
   //   component: function ButtonExample() {

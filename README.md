@@ -4,6 +4,7 @@ To build for development:
 2. bun install
 3. eas build --profile=development
 4. bun run start
+5. bun web for local
 
 To create a build to share with others:
 
