@@ -1,1 +1,50 @@
-bun run lint-staged
+#!/bin/sh
+
+echo "🔍 Running pre-commit checks..."
+echo ""
+
+# 1. Run lint-staged (Biome on staged files)
+echo "⚡ Running Biome on staged files..."
+bun run lint-staged || {
+  echo "❌ Biome checks failed. Please fix the issues above."
+  exit 1
+}
+
+# 2. Run TypeScript type checking
+echo ""
+echo "🔍 Running TypeScript type check..."
+bun run type-check || {
+  echo "❌ TypeScript type check failed. Please fix the type errors above."
+  exit 1
+}
+
+# 3. Check for console.log statements (warning only)
+echo ""
+echo "🔎 Checking for console statements..."
+if git diff --cached --name-only | grep -E '\.(ts|tsx|js|jsx)$' | xargs grep -n "console\.\(log\|debug\|info\)" 2>/dev/null; then
+  echo "⚠️  Warning: Found console statements in staged files."
+  echo "   Consider removing them before committing to production."
+  echo ""
+fi
+
+# 4. Check for debugging statements (warning only)
+if git diff --cached --name-only | grep -E '\.(ts|tsx|js|jsx)$' | xargs grep -n "debugger" 2>/dev/null; then
+  echo "⚠️  Warning: Found debugger statements in staged files."
+  echo "   Please remove them before committing."
+  echo ""
+fi
+
+# 5. Validate JSON files
+echo "📋 Validating JSON files..."
+for file in $(git diff --cached --name-only | grep '\.json$'); do
+  if [ -f "$file" ]; then
+    if ! jq empty "$file" 2>/dev/null; then
+      echo "❌ Invalid JSON in $file"
+      exit 1
+    fi
+  fi
+done
+
+echo ""
+echo "✅ All pre-commit checks passed!"
+echo ""
