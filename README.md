@@ -77,10 +77,13 @@ bun web          # Run on web
 - **Expo Localization 17.0.7**: Device locale detection and calendar preferences
 - **JSON-based Translations**: Simple locale files (EN, ES) with extensibility for additional languages
 
-### Monitoring & Analytics
-- **Sentry 7.4.0**: Error tracking with session replay, breadcrumbs, and performance monitoring
-- **Sentry Mobile Replay**: Visual session replay for debugging user interactions
-- **Sentry Feedback**: In-app user feedback collection
+### Monitoring & Error Tracking (HIPAA Compliant)
+- **Sentry 7.4.0**: Error tracking configured for HIPAA compliance
+  - PII tracking **DISABLED** (no IP addresses, cookies, or user data)
+  - Session replay **DISABLED** (prevents PHI capture)
+  - Automatic data scrubbing in `beforeSend` and `beforeBreadcrumb` hooks
+  - Console breadcrumbs **DISABLED** (may contain sensitive data)
+  - Feedback integration enabled for user-initiated reports only
 - **Source Maps**: Automatic source map upload for production debugging
 
 ### Code Quality & Linting

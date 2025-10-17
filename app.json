@@ -19,7 +19,8 @@
           "project": "calico-native",
           "organization": "calico-care"
         }
-      ]
+      ],
+      "expo-localization"
     ],
     "experiments": {
       "typedRoutes": true,

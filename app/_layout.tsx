@@ -18,17 +18,49 @@ import { NAV_THEME } from '@/theme';
 Sentry.init({
   dsn: 'https://e6b1ecb60dc09016b1b2c9991c40b916@o4510205406281728.ingest.us.sentry.io/4510205414604800',
 
-  // Adds more context data to events (IP address, cookies, user, etc.)
-  // For more information, visit: https://docs.sentry.io/platforms/react-native/data-management/data-collected/
-  sendDefaultPii: true,
+  // HIPAA Compliance: Disable PII tracking
+  // Do NOT send IP addresses, cookies, user info, or other PII
+  sendDefaultPii: false,
 
-  // Enable Logs
+  // Enable Logs (sanitize logs to avoid PHI)
   enableLogs: true,
 
-  // Configure Session Replay
-  replaysSessionSampleRate: 0.1,
-  replaysOnErrorSampleRate: 1,
-  integrations: [Sentry.mobileReplayIntegration(), Sentry.feedbackIntegration()],
+  // HIPAA Compliance: Disable Session Replay
+  // Session replay can capture sensitive health information
+  replaysSessionSampleRate: 0,
+  replaysOnErrorSampleRate: 0,
+
+  // HIPAA Compliance: Only include feedback integration (no replay)
+  integrations: [Sentry.feedbackIntegration()],
+
+  // Scrub sensitive data from breadcrumbs and events
+  beforeSend(event) {
+    // Remove user data if accidentally included
+    if (event.user) {
+      delete event.user.email;
+      delete event.user.username;
+      delete event.user.ip_address;
+    }
+    // Remove request data that might contain PHI
+    if (event.request) {
+      delete event.request.cookies;
+      delete event.request.headers;
+    }
+    return event;
+  },
+
+  beforeBreadcrumb(breadcrumb) {
+    // Remove sensitive data from breadcrumbs
+    if (breadcrumb.category === 'console') {
+      return null; // Drop console breadcrumbs (might contain PHI)
+    }
+    if (breadcrumb.data) {
+      // Scrub any data that might be sensitive
+      delete breadcrumb.data.url;
+      delete breadcrumb.data.data;
+    }
+    return breadcrumb;
+  },
 
   // uncomment the line below to enable Spotlight (https://spotlightjs.com)
   // spotlight: __DEV__,
