@@ -1,0 +1,63 @@
+name: EAS Update (OTA)
+
+on:
+  workflow_dispatch:
+    inputs:
+      branch:
+        description: 'Update branch'
+        required: true
+        type: choice
+        options:
+          - production
+          - preview
+          - development
+        default: preview
+      message:
+        description: 'Update message'
+        required: true
+        type: string
+
+jobs:
+  update:
+    name: Publish EAS Update
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Setup Expo
+        uses: expo/expo-github-action@v8
+        with:
+          expo-version: latest
+          eas-version: latest
+          token: ${{ secrets.EXPO_TOKEN }}
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Publish Update
+        run: |
+          eas update --branch ${{ github.event.inputs.branch }} \
+            --message "${{ github.event.inputs.message }}" \
+            --non-interactive
+
+      - name: Comment on commit
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const branch = '${{ github.event.inputs.branch }}';
+            const message = '${{ github.event.inputs.message }}';
+            
+            github.rest.repos.createCommitComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              commit_sha: context.sha,
+              body: `🚀 EAS Update published to **${branch}**\n\n${message}`
+            });
+

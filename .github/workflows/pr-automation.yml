@@ -1,0 +1,107 @@
+name: PR Automation
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, labeled, unlabeled]
+
+jobs:
+  auto-label:
+    name: Auto Label PR
+    runs-on: ubuntu-latest
+    permissions:
+      pull-requests: write
+      contents: read
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Label based on files changed
+        uses: actions/labeler@v5
+        with:
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Label based on size
+        uses: pascalgn/size-label-action@v0.5.4
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  pr-comment:
+    name: PR Comment
+    runs-on: ubuntu-latest
+    if: github.event.action == 'opened'
+    permissions:
+      pull-requests: write
+    
+    steps:
+      - name: Comment on PR
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const prNumber = context.issue.number;
+            const author = context.payload.pull_request.user.login;
+            
+            const comment = `👋 Thanks for opening this PR, @${author}!
+            
+            ## 🔍 Automated Checks
+            
+            Your PR will be automatically checked for:
+            - ✅ Linting (Biome)
+            - ✅ Type checking (TypeScript)
+            - ✅ Build status
+            
+            ## 📝 Checklist
+            
+            Before merging, please ensure:
+            - [ ] All CI checks pass
+            - [ ] Code has been reviewed
+            - [ ] Documentation is updated (if needed)
+            - [ ] No console.log statements in production code
+            
+            ## 🚀 EAS Update
+            
+            For JS-only changes, consider using \`EAS Update\` instead of a full build to save build credits!`;
+            
+            github.rest.issues.createComment({
+              issue_number: prNumber,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: comment
+            });
+
+  check-bundle-size:
+    name: Check Bundle Size
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Check bundle size
+        run: |
+          # Get current bundle size (approximate)
+          du -sh node_modules > current-size.txt
+          echo "📦 Dependencies size: $(cat current-size.txt)"
+
+      - name: Comment bundle info
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const size = fs.readFileSync('current-size.txt', 'utf8');
+            
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: `📦 **Bundle Information**\n\n${size}\n\n💡 Keep dependencies minimal to reduce app size.`
+            });
+
