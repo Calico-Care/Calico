@@ -1,4 +1,5 @@
 import '@/global.css';
+import '@/lib/i18n';
 
 import { ThemeProvider as NavThemeProvider } from '@react-navigation/native';
 import * as Device from 'expo-device';
@@ -12,6 +13,7 @@ import { ThemeToggle } from '@/components/nativewindui/ThemeToggle';
 import { cn } from '@/lib/cn';
 import { useColorScheme } from '@/lib/useColorScheme';
 import { NAV_THEME } from '@/theme';
+import { QueryProvider } from '@/providers/QueryProvider';
 import * as Sentry from '@sentry/react-native';
 
 Sentry.init({
@@ -50,16 +52,16 @@ export default Sentry.wrap(function RootLayout() {
         style={isDarkColorScheme ? 'light' : 'dark'}
       />
       {/* WRAP YOUR APP WITH ANY ADDITIONAL PROVIDERS HERE */}
-      {/* <ExampleProvider> */}
-      <GestureHandlerRootView style={{ flex: 1 }}>
-        <NavThemeProvider value={NAV_THEME[colorScheme]}>
-          <Stack>
-            <Stack.Screen name="index" options={INDEX_OPTIONS} />
-            <Stack.Screen name="modal" options={MODAL_OPTIONS} />
-          </Stack>
-        </NavThemeProvider>
-      </GestureHandlerRootView>
-      {/* </ExampleProvider> */}
+      <QueryProvider>
+        <GestureHandlerRootView style={{ flex: 1 }}>
+          <NavThemeProvider value={NAV_THEME[colorScheme]}>
+            <Stack>
+              <Stack.Screen name="index" options={INDEX_OPTIONS} />
+              <Stack.Screen name="modal" options={MODAL_OPTIONS} />
+            </Stack>
+          </NavThemeProvider>
+        </GestureHandlerRootView>
+      </QueryProvider>
     </>
   );
 });
