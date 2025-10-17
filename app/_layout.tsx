@@ -2,19 +2,18 @@ import '@/global.css';
 import '@/lib/i18n';
 
 import { ThemeProvider as NavThemeProvider } from '@react-navigation/native';
+import * as Sentry from '@sentry/react-native';
 import * as Device from 'expo-device';
 import { Link, Stack } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { Platform, Pressable } from 'react-native';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
-
 import { Icon } from '@/components/nativewindui/Icon';
 import { ThemeToggle } from '@/components/nativewindui/ThemeToggle';
 import { cn } from '@/lib/cn';
 import { useColorScheme } from '@/lib/useColorScheme';
-import { NAV_THEME } from '@/theme';
 import { QueryProvider } from '@/providers/QueryProvider';
-import * as Sentry from '@sentry/react-native';
+import { NAV_THEME } from '@/theme';
 
 Sentry.init({
   dsn: 'https://e6b1ecb60dc09016b1b2c9991c40b916@o4510205406281728.ingest.us.sentry.io/4510205414604800',

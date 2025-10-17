@@ -1,0 +1,13 @@
+appId: com.vesko.calico.calico
+---
+# Test basic navigation
+- launchApp
+- assertVisible: "NativewindUI"
+# Test modal navigation
+- tapOn:
+    id: "gear-icon"
+    retryTapIfNoChange: true
+- assertVisible: "Settings"
+- back
+- assertVisible: "NativewindUI"
+

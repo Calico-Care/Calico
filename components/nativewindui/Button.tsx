@@ -122,7 +122,8 @@ function Button({
             size,
             className: androidRootClassName,
           }),
-        })}>
+        })}
+      >
         <Pressable
           className={cn(
             props.disabled && 'opacity-50',

@@ -1,15 +1,13 @@
 import { useHeaderHeight } from '@react-navigation/elements';
+import { useNavigation } from '@react-navigation/native';
+import * as Sentry from '@sentry/react-native';
 import { FlashList } from '@shopify/flash-list';
+import * as Haptics from 'expo-haptics';
 import { cssInterop } from 'nativewind';
 import * as React from 'react';
 import { Linking, useWindowDimensions, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { SearchBarProps } from 'react-native-screens';
-import * as Sentry from '@sentry/react-native';
-
-import { useNavigation } from '@react-navigation/native';
-
-import * as Haptics from 'expo-haptics';
 
 import { Button } from '@/components/nativewindui/Button';
 
@@ -48,7 +46,7 @@ export default function Screen() {
 }
 
 function useHeaderSearchBar(props: SearchBarProps = {}) {
-  const { colorScheme, colors } = useColorScheme();
+  const { colors } = useColorScheme();
   const navigation = useNavigation();
   const [search, setSearch] = React.useState('');
 
@@ -68,7 +66,7 @@ function useHeaderSearchBar(props: SearchBarProps = {}) {
       } satisfies SearchBarProps,
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [navigation, colorScheme]);
+  }, [navigation, colors.foreground, colors.grey, colors.primary, props]);
 
   return search;
 }
@@ -91,7 +89,8 @@ function ListEmptyComponent() {
         <Text
           onPress={() => Linking.openURL('https://nativewindui.com')}
           variant="subhead"
-          className="text-primary">
+          className="text-primary"
+        >
           NativewindUI
         </Text>
         {' website.'}

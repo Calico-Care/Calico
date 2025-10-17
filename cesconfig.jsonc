@@ -15,10 +15,7 @@
       "name": "nativewindui",
       "type": "styling",
       "options": {
-        "selectedComponents": [
-          "button",
-          "text"
-        ]
+        "selectedComponents": ["button", "text"]
       }
     },
     {

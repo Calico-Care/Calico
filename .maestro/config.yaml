@@ -1,0 +1,11 @@
+# Maestro Configuration
+appId: com.vesko.calico.calico
+
+# Device settings
+# For iOS: use 'iPhone 15' or any simulator name
+# For Android: use 'pixel_8' or any emulator name
+
+# Test settings
+retries: 2
+timeout: 30000
+

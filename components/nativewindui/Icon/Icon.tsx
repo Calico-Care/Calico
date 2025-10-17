@@ -4,10 +4,8 @@ import {
   SF_SYMBOLS_TO_MATERIAL_COMMUNITY_ICONS,
   SF_SYMBOLS_TO_MATERIAL_ICONS,
 } from 'rn-icon-mapper';
-
-import type { IconProps } from './types';
-
 import { useColorScheme } from '@/lib/useColorScheme';
+import type { IconProps } from './types';
 
 function Icon({
   name,

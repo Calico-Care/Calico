@@ -1,6 +1,6 @@
 import { zodResolver } from '@hookform/resolvers/zod';
-import { useForm, Controller } from 'react-hook-form';
-import { View, TextInput, Alert } from 'react-native';
+import { Controller, useForm } from 'react-hook-form';
+import { Alert, TextInput, View } from 'react-native';
 import { z } from 'zod';
 import { Button } from '@/components/nativewindui/Button';
 import { Text } from '@/components/nativewindui/Text';
@@ -125,7 +125,7 @@ export function ExampleForm({ onSubmit, defaultValues, isLoading }: ExampleFormP
               placeholder="Enter your age"
               keyboardType="numeric"
               onBlur={onBlur}
-              onChangeText={(text) => onChange(parseInt(text) || 0)}
+              onChangeText={(text) => onChange(parseInt(text, 10) || 0)}
               value={value.toString()}
               editable={!isLoading && !isSubmitting}
             />
@@ -170,7 +170,8 @@ export function ExampleForm({ onSubmit, defaultValues, isLoading }: ExampleFormP
       <Button
         onPress={handleSubmit(onSubmitForm)}
         disabled={isLoading || isSubmitting}
-        className="mt-4">
+        className="mt-4"
+      >
         <Text>{isLoading || isSubmitting ? 'Submitting...' : 'Submit'}</Text>
       </Button>
     </View>

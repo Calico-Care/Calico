@@ -22,7 +22,8 @@ export default function ModalScreen() {
           <Text
             onPress={() => Linking.openURL('https://nativewindui.com')}
             variant="subhead"
-            className="text-primary">
+            className="text-primary"
+          >
             NativewindUI
           </Text>
           {' website.'}

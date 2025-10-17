@@ -1,0 +1,8 @@
+appId: com.vesko.calico.calico
+---
+# Test Sentry Integration
+- launchApp
+- assertVisible: "Sentry Test"
+- tapOn: "Try!"
+- assertVisible: "Sentry Test"
+
