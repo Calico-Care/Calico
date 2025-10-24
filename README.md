@@ -554,6 +554,14 @@ This application follows a **hybrid state management pattern**, separating clien
 **Why**: We use **Stytch** for auth, so Postgres cannot read tenant claims from a Supabase JWT. Edge Functions verify Stytch, resolve `org_id`, and run **RLS-scoped** queries (or service-role queries that always filter by `org_id`).
 **Public access**: If a `supabase-js` client exists in the app, it must be limited to **public** resources only (e.g., public Storage buckets) and **must not** touch protected tables.
 
+#### Connecting to your Supabase project
+
+1. Install the [Supabase CLI](https://supabase.com/docs/guides/cli) and authenticate: `supabase login`.
+2. Link this repo to your project: `supabase link --project-ref <YOUR_PROJECT_REF>`.
+3. Push the schema in `supabase/migrations/`: `supabase db push`.
+4. Copy `.env.example` → `.env` and set `EXPO_PUBLIC_SUPABASE_URL` / `EXPO_PUBLIC_SUPABASE_ANON_KEY` from your project settings.
+5. Store privileged secrets (service role key, JWT secret) in Edge Functions/EAS secrets—never in the Expo client.
+
 ### Custom API Client
 
 **Client**: Generic fetch-based client in `api/client.ts` that targets Edge Function endpoints.
@@ -959,7 +967,6 @@ Located in `.github/labeler.yml`, defines auto-labels for PRs based on file patt
 
 - `EXPO_PUBLIC_SUPABASE_URL` — Supabase project URL
 - `EXPO_PUBLIC_SUPABASE_ANON_KEY` — Supabase anonymous key (public)
-- `EXPO_PUBLIC_EDGE_BASE_URL` — Base URL for Edge Functions
 - `EXPO_PUBLIC_SENTRY_DSN` — Sentry error tracking DSN
 - `EXPO_PUBLIC_API_URL` — Custom API base URL
 - `EXPO_PUBLIC_ENV` — Environment flag (development/production)
@@ -973,9 +980,10 @@ Located in `.github/labeler.yml`, defines auto-labels for PRs based on file patt
 
 ### Local Development
 
-1. Create `.env` file in root
-2. Add variables with `EXPO_PUBLIC_` prefix
-3. Restart Expo server to load changes
+1. Copy `.env.example` to `.env` in the repo root
+2. Paste your Supabase project URL and anon key (`EXPO_PUBLIC_SUPABASE_*`)
+3. Supply any other `EXPO_PUBLIC_` values (API URL, environment tag, etc.)
+4. Restart Expo server to load changes
 
 ### Production/EAS
 

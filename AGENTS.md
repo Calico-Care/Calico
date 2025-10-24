@@ -12,6 +12,11 @@
 - VAPI (HIPAA mode) runs daily questionnaires, urgent callbacks, and PDF summaries surfaced inside our caregiver dashboard.
 - Stych delivers org onboarding, SSO, and SCIM; Expo + NativeWind power caregiver, patient/family, and admin experiences from one React Native codebase with web support.
 
+## Environment & Supabase Setup
+- Copy `.env.example` to `.env` and drop in `EXPO_PUBLIC_SUPABASE_URL` / `EXPO_PUBLIC_SUPABASE_ANON_KEY` from your Supabase project (Expo requires the `EXPO_PUBLIC_` prefix).
+- Use `supabase login` followed by `supabase link --project-ref <project-ref>` to connect migrations, then `supabase db push` to sync schema.
+- Keep service-role and other privileged keys in EAS/Edge secrets, never in the Expo bundle.
+
 ## Build, Test, and Development Commands
 - `bun install` manages dependencies; `bun run start` (plus `ios`/`android`/`web`) launches the dev client.
 - `bun run lint` and `bun run format` invoke Biome; `bun run type-check` calls `tsc`; `bun run build:prod` triggers an EAS production build.
