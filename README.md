@@ -41,6 +41,54 @@ bun web          # Run on web
 - [Contributing](#-contributing)
 - [License](#-license)
 
+## 📌 Project Proposal
+
+### Objectives
+- Deliver continuous CHF/COPD monitoring that keeps patients, caregivers, and PCPs aligned through automated vitals streaming, AI-assisted outreach, and timely escalations.
+- Provide organization, caregiver, and patient/family dashboards with granular IAM and auditability that satisfy HIPAA and enterprise IT expectations.
+
+### Solution Overview
+- BodyTrace CHF and COPD kits stream weight, BP, and SpO2 through Terra; normalized events land in Supabase Realtime for thresholding, trend analysis, and downstream actions.
+- A VAPI voice agent (HIPAA mode) runs daily check-ins, issues immediate calls on abnormal readings, and stores PDF summaries for caregiver review.
+- Authentication, SSO, and SCIM provisioning run through Stych; caregiver dashboards leverage MedPlum, while patient-facing experiences share the Expo/Tamagui codebase across web and native.
+
+### Key Capabilities
+- Real-time ingestion of weight, BP, SpO2, and heart-rate telemetry with event-driven alerting and green/yellow/red status calculation.
+- AI-assisted clinical outreach that escalates non-response or incoherent responses and personalizes prompts per patient profile.
+- Caregiver dashboards for enrollment, device assignment, VAPI scheduling, prompt management, PDF report access, and alert triage.
+- Organization onboarding with SCIM-powered provisioning plus patient/family portals for secure data access.
+
+### Monitoring & Triage Workflow
+- Supabase functions classify trends and thresholds; abnormal events trigger immediate VAPI calls.
+- Escalation flows notify caregivers when patients miss or fail calls, and PDF call summaries are filed for audit trails.
+
+### Security & Compliance
+- Supabase HIPAA projects supply encryption, network controls, RLS, and BAA coverage; VAPI enforces HIPAA voice handling.
+- MedPlum offers FHIR-native workflows and audit trails; Stych provides enterprise SSO/SCIM and org-level IAM guardrails.
+
+### Risks & Mitigations
+- **Integration complexity**: build an end-to-end POC and contract tests across Terra, Supabase, and VAPI.
+- **Compliance scope creep**: lock BAAs early, run shared responsibility checklists, and schedule pre-launch audits.
+- **Alert latency**: use idempotent webhooks, back-pressure, SLA monitors, and redundant notification channels.
+- **IAM sprawl**: model orgs and roles consistently via Stych + MedPlum with Supabase RLS enforcement.
+
+### KPIs & Success Criteria
+- ≥80 % daily check-in completion; ≥90 % contact rate for abnormal events during pilots.
+- <5-minute Time-to-Alert for critical thresholds with 99.9 % monitoring uptime.
+- Measurable caregiver efficiency gains and improved early intervention opportunities for CHF/COPD.
+
+### Decisions Requested
+- [ ] Approve Supabase + Terra + VAPI + Stych + MedPlum + Expo/Tamagui architecture for MVP delivery.
+- [ ] Authorize BAAs/legal review and fund a 2-week POC validating data flow, monitoring, VAPI escalation, and PDF reporting.
+
+### Reference Material
+- Supabase: https://supabase.com/docs
+- Terra: https://docs.tryterra.co/
+- VAPI: https://docs.vapi.ai/quickstart/introduction
+- Expo: https://docs.expo.dev/
+- MedPlum: https://www.medplum.com/docs
+- UI inspiration: https://welly.dexignzone.com/ and https://miro.com/app/live-embed/uXjVJ5dbzqE=/?embedMode=view_only_without_ui&moveToViewport=-1550%2C-538%2C4319%2C3545&embedId=370905070662
+
 ## 🛠️ Core Technologies
 
 ### Platform & Framework
@@ -1182,6 +1230,8 @@ Located in `.github/labeler.yml`, defines auto-labels for PRs based on file patt
 - **Performance Guide**: React Native performance optimization
 
 ## 🤝 Contributing
+
+For day-to-day expectations, see the [Repository Guidelines](AGENTS.md) covering project structure, commands, and review checklists.
 
 ### Getting Started
 
