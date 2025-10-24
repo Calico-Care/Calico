@@ -9,8 +9,8 @@
 
 ## Platform Scope & Integrations
 - BodyTrace CHF/COPD kits stream via Terra webhooks into Supabase Realtime for trend math and green/yellow/red alerts.
-- VAPI (HIPAA mode) runs daily questionnaires, urgent callbacks, and PDF summaries surfaced through MedPlum caregiver tools.
-- Stych delivers org onboarding, SSO, and SCIM; Expo + Tamagui power caregiver, patient/family, and admin dashboards from one codebase.
+- VAPI (HIPAA mode) runs daily questionnaires, urgent callbacks, and PDF summaries surfaced inside our caregiver dashboard.
+- Stych delivers org onboarding, SSO, and SCIM; Expo + NativeWind power caregiver, patient/family, and admin experiences from one React Native codebase with web support.
 
 ## Build, Test, and Development Commands
 - `bun install` manages dependencies; `bun run start` (plus `ios`/`android`/`web`) launches the dev client.
@@ -23,7 +23,7 @@
 
 ## Testing Guidelines
 - Before a PR, run at least one Maestro flow (e.g., `maestro test .maestro/flows/navigation.yaml`) alongside `bun run lint` and `bun run type-check`.
-- Add new flows in `.maestro/flows` using kebab-case; document coverage for Supabase logic, Terra ingestion, VAPI voice paths, and MedPlum widgets.
+- Add new flows in `.maestro/flows` using kebab-case; document coverage for Supabase logic, Terra ingestion, VAPI voice paths, and caregiver dashboard workflows.
 - Attach simulator screenshots or PDF artifacts when altering dashboards, alerts, or report generation.
 
 ## Commit & Pull Request Guidelines

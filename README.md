@@ -50,7 +50,7 @@ bun web          # Run on web
 ### Solution Overview
 - BodyTrace CHF and COPD kits stream weight, BP, and SpO2 through Terra; normalized events land in Supabase Realtime for thresholding, trend analysis, and downstream actions.
 - A VAPI voice agent (HIPAA mode) runs daily check-ins, issues immediate calls on abnormal readings, and stores PDF summaries for caregiver review.
-- Authentication, SSO, and SCIM provisioning run through Stych; caregiver dashboards leverage MedPlum, while patient-facing experiences share the Expo/Tamagui codebase across web and native.
+- Authentication, SSO, and SCIM provisioning run through Stych; caregiver and patient dashboards share a single Expo codebase with NativeWind-powered UI and web support via Expo Router.
 
 ### Key Capabilities
 - Real-time ingestion of weight, BP, SpO2, and heart-rate telemetry with event-driven alerting and green/yellow/red status calculation.
@@ -64,13 +64,13 @@ bun web          # Run on web
 
 ### Security & Compliance
 - Supabase HIPAA projects supply encryption, network controls, RLS, and BAA coverage; VAPI enforces HIPAA voice handling.
-- MedPlum offers FHIR-native workflows and audit trails; Stych provides enterprise SSO/SCIM and org-level IAM guardrails.
+- Stych provides enterprise SSO/SCIM and org-level IAM guardrails while maintaining auditability.
 
 ### Risks & Mitigations
 - **Integration complexity**: build an end-to-end POC and contract tests across Terra, Supabase, and VAPI.
 - **Compliance scope creep**: lock BAAs early, run shared responsibility checklists, and schedule pre-launch audits.
 - **Alert latency**: use idempotent webhooks, back-pressure, SLA monitors, and redundant notification channels.
-- **IAM sprawl**: model orgs and roles consistently via Stych + MedPlum with Supabase RLS enforcement.
+- **IAM sprawl**: model orgs and roles consistently via Stych with Supabase RLS enforcement.
 
 ### KPIs & Success Criteria
 - ≥80 % daily check-in completion; ≥90 % contact rate for abnormal events during pilots.
@@ -78,7 +78,7 @@ bun web          # Run on web
 - Measurable caregiver efficiency gains and improved early intervention opportunities for CHF/COPD.
 
 ### Decisions Requested
-- [ ] Approve Supabase + Terra + VAPI + Stych + MedPlum + Expo/Tamagui architecture for MVP delivery.
+- [ ] Approve Supabase + Terra + VAPI + Stych + Expo/NativeWind stack for MVP delivery.
 - [ ] Authorize BAAs/legal review and fund a 2-week POC validating data flow, monitoring, VAPI escalation, and PDF reporting.
 
 ### Reference Material
@@ -86,7 +86,6 @@ bun web          # Run on web
 - Terra: https://docs.tryterra.co/
 - VAPI: https://docs.vapi.ai/quickstart/introduction
 - Expo: https://docs.expo.dev/
-- MedPlum: https://www.medplum.com/docs
 - UI inspiration: https://welly.dexignzone.com/ and https://miro.com/app/live-embed/uXjVJ5dbzqE=/?embedMode=view_only_without_ui&moveToViewport=-1550%2C-538%2C4319%2C3545&embedId=370905070662
 
 ## 🛠️ Core Technologies
