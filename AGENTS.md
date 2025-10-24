@@ -13,9 +13,10 @@
 - Stych delivers org onboarding, SSO, and SCIM; Expo + NativeWind power caregiver, patient/family, and admin experiences from one React Native codebase with web support.
 
 ## Environment & Supabase Setup
-- Copy `.env.example` to `.env` and drop in `EXPO_PUBLIC_SUPABASE_URL` / `EXPO_PUBLIC_SUPABASE_ANON_KEY` from your Supabase project (Expo requires the `EXPO_PUBLIC_` prefix).
+- Enable the new API keys in your Supabase Dashboard: `Settings` → `API` → Enable new API key system.
+- Copy `.env.example` to `.env` and drop in `EXPO_PUBLIC_SUPABASE_URL` / `EXPO_PUBLIC_SUPABASE_PUBLISHABLE_KEY` (starts with `sb_publishable_...`) from your Supabase project (Expo requires the `EXPO_PUBLIC_` prefix).
 - Use `supabase login` followed by `supabase link --project-ref <project-ref>` to connect migrations, then `supabase db push` to sync schema.
-- Keep service-role and other privileged keys in EAS/Edge secrets, never in the Expo bundle.
+- Keep secret key and other privileged keys in EAS/Edge secrets, never in the Expo bundle.
 
 ## Build, Test, and Development Commands
 - `bun install` manages dependencies; `bun run start` (plus `ios`/`android`/`web`) launches the dev client.

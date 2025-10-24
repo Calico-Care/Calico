@@ -559,8 +559,9 @@ This application follows a **hybrid state management pattern**, separating clien
 1. Install the [Supabase CLI](https://supabase.com/docs/guides/cli) and authenticate: `supabase login`.
 2. Link this repo to your project: `supabase link --project-ref <YOUR_PROJECT_REF>`.
 3. Push the schema in `supabase/migrations/`: `supabase db push`.
-4. Copy `.env.example` → `.env` and set `EXPO_PUBLIC_SUPABASE_URL` / `EXPO_PUBLIC_SUPABASE_ANON_KEY` from your project settings.
-5. Store privileged secrets (service role key, JWT secret) in Edge Functions/EAS secrets—never in the Expo client.
+4. Enable the new API keys in your Supabase Dashboard: `Settings` → `API` → Enable new API key system.
+5. Copy `.env.example` → `.env` and set `EXPO_PUBLIC_SUPABASE_URL` / `EXPO_PUBLIC_SUPABASE_PUBLISHABLE_KEY` (starts with `sb_publishable_...`) from your project settings.
+6. Store privileged secrets (secret key, JWT secret) in Edge Functions/EAS secrets—never in the Expo client.
 
 ### Custom API Client
 
@@ -966,7 +967,7 @@ Located in `.github/labeler.yml`, defines auto-labels for PRs based on file patt
 **Managed Variables**:
 
 - `EXPO_PUBLIC_SUPABASE_URL` — Supabase project URL
-- `EXPO_PUBLIC_SUPABASE_ANON_KEY` — Supabase anonymous key (public)
+- `EXPO_PUBLIC_SUPABASE_PUBLISHABLE_KEY` — Supabase publishable key (public, starts with `sb_publishable_...`)
 - `EXPO_PUBLIC_SENTRY_DSN` — Sentry error tracking DSN
 - `EXPO_PUBLIC_API_URL` — Custom API base URL
 - `EXPO_PUBLIC_ENV` — Environment flag (development/production)
@@ -980,10 +981,11 @@ Located in `.github/labeler.yml`, defines auto-labels for PRs based on file patt
 
 ### Local Development
 
-1. Copy `.env.example` to `.env` in the repo root
-2. Paste your Supabase project URL and anon key (`EXPO_PUBLIC_SUPABASE_*`)
-3. Supply any other `EXPO_PUBLIC_` values (API URL, environment tag, etc.)
-4. Restart Expo server to load changes
+1. Enable the new API keys in your Supabase Dashboard: `Settings` → `API` → Enable new API key system
+2. Copy `.env.example` to `.env` in the repo root
+3. Paste your Supabase project URL and publishable key (`EXPO_PUBLIC_SUPABASE_*`)
+4. Supply any other `EXPO_PUBLIC_` values (API URL, environment tag, etc.)
+5. Restart Expo server to load changes
 
 ### Production/EAS
 
@@ -999,7 +1001,7 @@ Located in `.github/labeler.yml`, defines auto-labels for PRs based on file patt
 - Rotate keys regularly
 - Use minimal permissions for API keys
 - Validate required variables at runtime
-- **Do not expose secrets** (DB passwords, Supabase service role key, Stytch secrets) to the client; keep them in Edge Function or EAS secrets only
+- **Do not expose secrets** (DB passwords, Supabase secret key, Stytch secrets) to the client; keep them in Edge Function or EAS secrets only
 
 ## 🎯 Best Practices
 

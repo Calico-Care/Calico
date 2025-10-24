@@ -10,12 +10,14 @@ import Constants from 'expo-constants';
  *
  * For production, set these in EAS secrets:
  * eas secret:create --scope project --name EXPO_PUBLIC_SUPABASE_URL --value <value>
+ *
+ * Note: This project uses Supabase's new API keys system with publishable keys (sb_publishable_...)
  */
 
 export const env = {
   // Supabase
   supabaseUrl: process.env.EXPO_PUBLIC_SUPABASE_URL || '',
-  supabaseAnonKey: process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY || '',
+  supabasePublishableKey: process.env.EXPO_PUBLIC_SUPABASE_PUBLISHABLE_KEY || '',
 
   // Sentry
   sentryDsn:
@@ -39,7 +41,7 @@ export const env = {
 if (env.isProduction) {
   const requiredVars = {
     EXPO_PUBLIC_SUPABASE_URL: env.supabaseUrl,
-    EXPO_PUBLIC_SUPABASE_ANON_KEY: env.supabaseAnonKey,
+    EXPO_PUBLIC_SUPABASE_PUBLISHABLE_KEY: env.supabasePublishableKey,
   };
 
   Object.entries(requiredVars).forEach(([key, value]) => {

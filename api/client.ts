@@ -5,10 +5,12 @@ import { env } from '@/config/env';
  * Supabase client instance
  *
  * To use this client:
- * 1. Set EXPO_PUBLIC_SUPABASE_URL and EXPO_PUBLIC_SUPABASE_ANON_KEY in your .env file
+ * 1. Set EXPO_PUBLIC_SUPABASE_URL and EXPO_PUBLIC_SUPABASE_PUBLISHABLE_KEY in your .env file
  * 2. Import and use in your components or API hooks
+ *
+ * Note: Uses Supabase's new API keys system with publishable keys (sb_publishable_...)
  */
-export const supabase = createClient(env.supabaseUrl, env.supabaseAnonKey, {
+export const supabase = createClient(env.supabaseUrl, env.supabasePublishableKey, {
   auth: {
     // Auto refresh token
     autoRefreshToken: true,
