@@ -13,10 +13,9 @@
 - Stych delivers org onboarding, SSO, and SCIM; Expo + NativeWind power caregiver, patient/family, and admin experiences from one React Native codebase with web support.
 
 ## Environment & Supabase Setup
-- Enable the new API keys in your Supabase Dashboard: `Settings` → `API` → Enable new API key system.
-- Copy `.env.example` to `.env` and drop in `EXPO_PUBLIC_SUPABASE_URL` / `EXPO_PUBLIC_SUPABASE_PUBLISHABLE_KEY` (starts with `sb_publishable_...`) from your Supabase project (Expo requires the `EXPO_PUBLIC_` prefix).
+- Copy `.env.example` to `.env` and add `EXPO_PUBLIC_SUPABASE_URL` / `EXPO_PUBLIC_SUPABASE_ANON_KEY` from your Supabase project (Expo requires the `EXPO_PUBLIC_` prefix).
 - Use `supabase login` followed by `supabase link --project-ref <project-ref>` to connect migrations, then `supabase db push` to sync schema.
-- Keep secret key and other privileged keys in EAS/Edge secrets, never in the Expo bundle.
+- Keep service-role and other privileged keys in EAS/Edge secrets, never in the Expo bundle.
 
 ## Build, Test, and Development Commands
 - `bun install` manages dependencies; `bun run start` (plus `ios`/`android`/`web`) launches the dev client.
@@ -36,3 +35,20 @@
 - Use Conventional Commits (`feat:`, `fix:`, `chore:`); Husky + lint-staged will format staged files.
 - PRs must explain user and clinical impact, list executed tests, link Supabase issues or Terraform tickets, and describe config changes (env vars, HIPAA modes, EAS profiles).
 - Update `locales/` for new copy and call out follow-on steps such as BAA reviews or Stych provisioning updates.
+
+## Graphite.dev Workflow
+- Install the CLI (`brew install withgraphite/tap/graphite`), run `gt auth login`, then `gt init` inside the repo.
+- Keep `main` fresh with `gt repo sync` / `gt upstack onto origin/main`; create feature branches via `gt branch create <name>`.
+- Stage files normally, then `gt commit` to add to your stack; use `gt status` or `gt stack list` to view pending work.
+- Ship changes with `gt stack submit` (or `gt submit` when unstacked); rerun tests before each submit and prefer amending (`gt amend`) + `gt stack submit --update` for review fixes.
+
+### Common Commands
+- `gt repo sync` — sync with `origin/main` and clean merged stacks.
+- `gt branch create feature/<slug>` — start a stacked branch that will map to a GitHub PR.
+- `git add <files>` + `bun run format && bun run type-check` (+ Maestro flows) — stage and verify work.
+- `gt commit -m "feat: ..."` — create stack-aware commits (avoid `git commit`).
+- `gt status` / `gt stack list` — preview branch order and submission status.
+- `gt stack submit` / `gt submit` — open or refresh GitHub PRs.
+- `gt amend` + `gt stack submit --update` — fix the latest commit and push review updates.
+- `gt downstack <branch>` / `gt upstack` — jump to earlier/later branches to edit.
+- `gt branch delete <branch>` — clean up after merges.

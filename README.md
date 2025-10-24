@@ -1244,14 +1244,28 @@ For day-to-day expectations, see the [Repository Guidelines](AGENTS.md) covering
 
 ### Getting Started
 
-1. Fork the repository
-2. Create a feature branch: `git checkout -b feature/my-feature`
-3. Make your changes
-4. Run quality checks: `bun run format && bun run type-check`
-5. Commit: `git commit -m "feat: add my feature"`
-6. Push: `git push origin feature/my-feature`
-7. Open a Pull Request
+We manage pull requests with [Graphite.dev](https://graphite.dev) so stacked diffs stay reviewable.
 
+1. Fork (or clone with access) and install the CLI: `brew install withgraphite/tap/graphite` (or see their docs for other installers).
+2. Authenticate once: `gt auth login`, then initialize in the repo root: `gt init`.
+3. Sync the latest `main`: `gt repo sync` (or `gt upstack onto origin/main` when rebasing a stack).
+4. Create a branch with Graphite: `gt branch create feature/my-feature`.
+5. Make your changes and run `bun run format && bun run type-check` (plus Maestro flows as needed).
+6. Stage files (`git add .`) and create commits via `gt commit`.
+7. Submit your stack: `gt stack submit` (or `gt submit` for single-PR flows); Graphite opens/updates GitHub PRs automatically.
+8. Use `gt stack list` / `gt status` to monitor stacks and `gt downstack` if you must edit earlier commits.
+
+### Daily Command Loop
+
+- `gt repo sync` — pull latest `origin/main`, prune merged stacks, and refresh local state.
+- `gt branch create feature/<slug>` — start a new branch in the stack (one branch = one upcoming PR).
+- `git add <files>` + `bun run format && bun run type-check` (and Maestro flows when relevant) — stage and verify changes.
+- `gt commit -m "feat: ..."` — record commits with Graphite so stack metadata stays accurate.
+- `gt status` / `gt stack list` — inspect stack order and readiness before submitting.
+- `gt stack submit` (`gt submit` for a single branch) — open/update GitHub PRs for each branch in the stack.
+- `gt amend` + `gt stack submit --update` — adjust the latest commit after feedback and refresh the PR.
+- `gt downstack <branch>` / `gt upstack` — jump to earlier or later branches when you need to edit part of the stack.
+- `gt branch delete <branch>` — remove merged or abandoned branches once GitHub PRs are closed.
 ### Code Standards
 
 - Follow existing code style (enforced by Biome)
@@ -1262,11 +1276,10 @@ For day-to-day expectations, see the [Repository Guidelines](AGENTS.md) covering
 
 ### PR Guidelines
 
-- Describe what and why in PR description
-- Link related issues
-- Ensure all CI checks pass
-- Request review from maintainers
-- Address review comments promptly
+- Use Graphite’s PR templates; include clear “what/why” context and link related issues.
+- Keep stacks small—`gt stack submit` should only include review-ready commits.
+- Ensure CI checks pass (`bun run lint`, `bun run type-check`, Maestro flows) before updating the stack.
+- Request review via Graphite or GitHub, and use `gt amend` + `gt stack submit --update` to address feedback.
 
 ## 📄 License
 
