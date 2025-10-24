@@ -37,10 +37,14 @@
 - Update `locales/` for new copy and call out follow-on steps such as BAA reviews or Stych provisioning updates.
 
 ## Graphite.dev Workflow
-- Install the CLI (`brew install withgraphite/tap/graphite`), run `gt auth login`, then `gt init` inside the repo.
-- Keep `main` fresh with `gt repo sync` / `gt upstack onto origin/main`; create feature branches via `gt branch create <name>`.
-- Stage files normally, then `gt commit` to add to your stack; use `gt status` or `gt stack list` to view pending work.
-- Ship changes with `gt stack submit` (or `gt submit` when unstacked); rerun tests before each submit and prefer amending (`gt amend`) + `gt stack submit --update` for review fixes.
+1. Install the CLI (`brew install withgraphite/tap/graphite`), run `gt auth login`, then `gt init` inside the repo root.
+2. Keep `main` fresh with `gt repo sync`; when you need to rebase a stack, use `gt upstack onto origin/main`.
+3. Create feature branches via `gt branch create feature/<slug>` so every branch maps cleanly to a PR.
+4. Stage files (`git add <files>`), run the required checks, and record commits with `gt commit` to preserve stack metadata.
+5. Use `gt status` or `gt stack list` to inspect pending work and verify branch order.
+6. Ship changes with `gt stack submit` (or `gt submit` for a single branch) and rerun tests before each submit.
+7. Address review feedback with `gt amend` + `gt stack submit --update`, and hop around the stack using `gt downstack <branch>` / `gt upstack`.
+8. Clean up merged work via `gt branch delete <branch>` once the GitHub PR is closed.
 
 ### Common Commands
 - `gt repo sync` — sync with `origin/main` and clean merged stacks.

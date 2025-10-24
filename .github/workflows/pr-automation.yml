@@ -4,6 +4,11 @@ on:
   pull_request:
     types: [opened, synchronize, reopened, labeled, unlabeled]
 
+permissions:
+  contents: read
+  pull-requests: write
+  issues: write
+
 jobs:
   auto-label:
     name: Auto Label PR
@@ -104,4 +109,3 @@ jobs:
               repo: context.repo.repo,
               body: `📦 **Bundle Information**\n\n${size}\n\n💡 Keep dependencies minimal to reduce app size.`
             });
-

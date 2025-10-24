@@ -804,23 +804,22 @@ Seven automated GitHub Actions workflows handle code quality, security, builds, 
 **Jobs**:
 
 - **Auto-label**: Applies labels based on changed files (uses `.github/labeler.yml`)
-- **Welcome**: Posts welcome message on first-time contributor PRs
-- **Bundle Size**: Analyzes and comments on bundle size changes
-- **PR Checklist**: Adds automated checklist for code review
+- **PR Comment + Checklist**: When a PR is opened, `pr-comment` thanks the author and posts the checklist that reviewers expect
+- **Check Bundle Size (optional)**: Installs dependencies with `bun install --frozen-lockfile`, runs `du -sh node_modules`, then comments with the dependency footprint
 
-**Purpose**: Streamline PR review process and provide helpful context
+**Purpose**: Streamline PR review process and provide helpful context. The bundle-size job is informational only but will fail if Bun cannot finish installing dependencies; rerun locally via `bun install --frozen-lockfile && du -sh node_modules` (helps diagnose missing lockfile updates) before retrying the workflow. The workflow sets `permissions: { contents: read, pull-requests: write, issues: write }` so GitHub can post checklist/bundle comments—if you downgrade those permissions, the jobs will fail with `Resource not accessible by integration`.
 
 ### 5. Security Scanning (`security.yml`)
 
-**Trigger**: Weekly schedule (Mondays 9 AM UTC) and manual dispatch
+**Trigger**: Weekly schedule (Mondays 9 AM UTC), manual dispatch, and pull requests against `main`
 
 **Jobs**:
 
-- **Dependency Audit**:
+- **Security Audit (optional)**:
 
-  - Run `bun audit` for known vulnerabilities
-  - Auto-create issues for critical/high severity findings
-  - Report results in workflow summary
+  - Install dependencies with `bun install --frozen-lockfile`
+  - Run `bun outdated` (Bun lacks a native `bun audit` command) and capture the output in `outdated.txt`
+  - Open a GitHub issue labeled `security,dependencies` if outdated packages are detected
 
 - **CodeQL Analysis**:
 
@@ -828,7 +827,7 @@ Seven automated GitHub Actions workflows handle code quality, security, builds, 
   - Automatic SARIF upload to GitHub Security tab
   - Detect common vulnerability patterns
 
-**Purpose**: Proactive security monitoring and vulnerability detection
+**Purpose**: Proactive security monitoring and vulnerability detection. When the Security Audit job fails, inspect the “Install dependencies” step for lockfile drift, run `bun install --frozen-lockfile && bun outdated` locally, and either refresh dependencies or document why they must remain pinned before re-running the workflow.
 
 ### 6. Release Automation (`release.yml`)
 
@@ -1249,7 +1248,7 @@ We manage pull requests with [Graphite.dev](https://graphite.dev) so stacked dif
 1. Fork (or clone with access) and install the CLI: `brew install withgraphite/tap/graphite` (or see their docs for other installers).
 2. Authenticate once: `gt auth login`, then initialize in the repo root: `gt init`.
 3. Sync the latest `main`: `gt repo sync` (or `gt upstack onto origin/main` when rebasing a stack).
-4. Create a branch with Graphite: `gt branch create feature/my-feature`.
+4. Create a branch with Graphite: `gt branch create feature/<slug>`.
 5. Make your changes and run `bun run format && bun run type-check` (plus Maestro flows as needed).
 6. Stage files (`git add .`) and create commits via `gt commit`.
 7. Submit your stack: `gt stack submit` (or `gt submit` for single-PR flows); Graphite opens/updates GitHub PRs automatically.
