@@ -228,15 +228,18 @@ jobs:
 
       - name: Run Semgrep scan
         run: |
+          set +e
           semgrep scan \
             --config p/react-native \
             --config p/owasp-top-ten \
-            --sarif --output semgrep.sarif \
-            --severity-level=WARNING \
-            || EXIT_CODE=$?
-          if [ "${EXIT_CODE:-0}" = "7" ]; then
+            --sarif --output semgrep.sarif
+          EXIT_CODE=$?
+          set -e
+          if [ "$EXIT_CODE" = "7" ]; then
             echo "::warning title=Semgrep findings detected::Review semgrep.sarif or the job log for details."
             exit 0
+          elif [ "$EXIT_CODE" != "0" ]; then
+            exit "$EXIT_CODE"
           fi
 
       - name: Upload Semgrep SARIF
@@ -248,7 +251,8 @@ jobs:
         env:
           GITLEAKS_LICENSE: ${{ secrets.GITLEAKS_LICENSE }}
         run: |
-          curl -sSfL https://raw.githubusercontent.com/gitleaks/gitleaks/master/scripts/install.sh | bash -s -- v8.24.3
+          curl -sSL https://github.com/gitleaks/gitleaks/releases/download/v8.24.3/gitleaks_8.24.3_linux_x64.tar.gz -o gitleaks.tar.gz
+          tar -xzf gitleaks.tar.gz gitleaks
           sudo install -m 755 gitleaks /usr/local/bin/gitleaks
 
       - name: Determine PR base commit
