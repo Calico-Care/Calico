@@ -97,7 +97,7 @@ jobs:
         run: bun install --frozen-lockfile
 
       - name: Run Expo doctor
-        run: bunx --bun expo doctor
+        run: npx expo-doctor
 
       - name: Export web bundle
         run: bunx --bun expo export --platform web --output-dir ./web-dist
@@ -223,16 +223,19 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Run Semgrep
-        uses: semgrep/semgrep-action@v1
-        with:
-          config: |
-            p/react-native
-            p/owasp-top-ten
-          generateSarif: true
+      - name: Install Semgrep CLI
+        run: python3 -m pip install --user --upgrade semgrep
+
+      - name: Run Semgrep scan
+        run: |
+          python3 -m semgrep scan \
+            --config p/react-native \
+            --config p/owasp-top-ten \
+            --sarif --output semgrep.sarif \
+            --error
 
       - name: Upload Semgrep SARIF
-        if: always()
+        if: always() && hashFiles('semgrep.sarif') != ''
         uses: github/codeql-action/upload-sarif@v3
         with:
           sarif_file: semgrep.sarif
@@ -245,7 +248,7 @@ jobs:
           redact: true
 
       - name: Upload Gitleaks SARIF
-        if: always()
+        if: always() && hashFiles('gitleaks.sarif') != ''
         uses: github/codeql-action/upload-sarif@v3
         with:
           sarif_file: gitleaks.sarif
