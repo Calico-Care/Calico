@@ -1,0 +1,38 @@
+version: 2
+updates:
+  - package-ecosystem: "npm"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "09:00"
+      timezone: "UTC"
+    allow:
+      - dependency-name: "expo"
+      - dependency-name: "expo-router"
+      - dependency-name: "expo-application"
+      - dependency-name: "expo-constants"
+      - dependency-name: "expo-dev-client"
+      - dependency-name: "expo-device"
+      - dependency-name: "expo-file-system"
+      - dependency-name: "expo-haptics"
+      - dependency-name: "expo-linking"
+      - dependency-name: "expo-localization"
+      - dependency-name: "expo-status-bar"
+      - dependency-name: "expo-symbols"
+      - dependency-name: "expo-system-ui"
+      - dependency-name: "expo-web-browser"
+      - dependency-name: "expo-font"
+      - dependency-name: "@sentry/react-native"
+      - dependency-name: "react"
+      - dependency-name: "react-native"
+    groups:
+      expo-sdk:
+        applies-to: version-updates
+        patterns:
+          - "expo"
+          - "expo-*"
+          - "react-native"
+          - "react"
+          - "@sentry/react-native"
+    open-pull-requests-limit: 5

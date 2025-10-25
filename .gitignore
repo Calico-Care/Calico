@@ -1,4 +1,5 @@
 node_modules/
+.bun/
 .expo/
 dist/
 npm-debug.*
@@ -9,6 +10,7 @@ npm-debug.*
 *.mobileprovision
 *.orig.*
 web-build/
+web-dist/
 # expo router
 expo-env.d.ts
 
