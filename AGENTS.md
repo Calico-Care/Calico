@@ -20,6 +20,7 @@
 ## Build, Test, and Development Commands
 - `bun install` manages dependencies; `bun run start` (plus `ios`/`android`/`web`) launches the dev client.
 - `bun run lint` and `bun run format` invoke Biome; `bun run type-check` calls `tsc`; `bun run build:prod` triggers an EAS production build.
+- GitHub Actions uses the Graphite CI Optimizer (`withgraphite/graphite-ci-action`) to skip redundant runs—set the repo secret `GRAPHITE_CI_TOKEN` so the optimizer can authenticate; otherwise the `ci.yml` workflow fails early.
 
 ## Coding Style & Naming Conventions
 - Biome enforces two-space indentation, LF endings, single quotes, `es5` trailing commas, and semicolons.
@@ -38,21 +39,20 @@
 
 ## Graphite.dev Workflow
 1. Install the CLI (`brew install withgraphite/tap/graphite`), run `gt auth login`, then `gt init` inside the repo root.
-2. Keep `main` fresh with `gt repo sync`; when you need to rebase a stack, use `gt upstack onto origin/main`.
-3. Create feature branches via `gt branch create feature/<slug>` so every branch maps cleanly to a PR.
-4. Stage files (`git add <files>`), run the required checks, and record commits with `gt commit` to preserve stack metadata.
-5. Use `gt status` or `gt stack list` to inspect pending work and verify branch order.
-6. Ship changes with `gt stack submit` (or `gt submit` for a single branch) and rerun tests before each submit.
-7. Address review feedback with `gt amend` + `gt stack submit --update`, and hop around the stack using `gt downstack <branch>` / `gt upstack`.
-8. Clean up merged work via `gt branch delete <branch>` once the GitHub PR is closed.
+2. Keep `main` current with `gt checkout main` followed by `gt sync` (pulls trunk, restacks open PRs, prunes merged branches).
+3. After editing files, run `gt create --all --message "feat(...)"` to stage changes, commit, and spin up a new branch/PR seed in a single command.
+4. Visualize or jump between branches with `gt checkout` (interactive picker) or `gt top` to hop to the newest branch in your stack.
+5. Push work with `gt submit` (single PR) or `gt submit --stack --reviewers <handle>` when sending an entire stack for review.
+6. Stack more changes by repeating `gt checkout` ➝ edit ➝ `gt create --all --message "..."` on top of the previous branch.
+7. Respond to review feedback using `gt modify -a` (amend in place) or `gt modify -cam "Respond to review"` to add a follow-up commit—Graphite restacks upstack branches automatically.
+8. Run `gt sync` whenever `main` moves or after merges to refresh every branch and clean up merged work locally.
 
 ### Common Commands
-- `gt repo sync` — sync with `origin/main` and clean merged stacks.
-- `gt branch create feature/<slug>` — start a stacked branch that will map to a GitHub PR.
-- `git add <files>` + `bun run format && bun run type-check` (+ Maestro flows) — stage and verify work.
-- `gt commit -m "feat: ..."` — create stack-aware commits (avoid `git commit`).
-- `gt status` / `gt stack list` — preview branch order and submission status.
-- `gt stack submit` / `gt submit` — open or refresh GitHub PRs.
-- `gt amend` + `gt stack submit --update` — fix the latest commit and push review updates.
-- `gt downstack <branch>` / `gt upstack` — jump to earlier/later branches to edit.
-- `gt branch delete <branch>` — clean up after merges.
+- `gt sync` — pull latest trunk, restack open PRs, and delete merged/closed branches.
+- `gt checkout` — interactively select any branch in your stack (or use `gt top` to jump upstack).
+- `gt create --all --message "feat: ..."` — stage all changes, create a branch, and commit with one command.
+- `gt submit --stack [--reviewers alice]` — push PRs (single or stacked) and request reviewers.
+- `gt modify -a` / `gt modify -cam "message"` — amend existing commits or add review-response commits while restacking dependents.
+- `gt log short` / `gt ls` — visualize the stack and confirm ordering before submitting.
+- `gt restack` — re-run restacking manually after resolving conflicts.
+- `gt pr` — open the active branch’s PR in Graphite/GitHub to review or merge.

@@ -753,13 +753,14 @@ Seven automated GitHub Actions workflows handle code quality, security, builds, 
 
 **Jobs**:
 
+- Graphite CI Optimizer — runs `withgraphite/graphite-ci-action@main` with `GRAPHITE_CI_TOKEN` to decide whether downstream work can be skipped
 - Checkout code
 - Setup Bun package manager
 - Install dependencies
 - Run Biome linter
 - Run TypeScript type checking
 
-**Purpose**: Ensure code quality before merging
+**Purpose**: Ensure code quality before merging. Configure a repository secret named `GRAPHITE_CI_TOKEN` (Graphite API token) or the optimizer will fail and block the lint job.
 
 ### 2. EAS Build (`eas-build.yml`)
 
@@ -1245,26 +1246,25 @@ For day-to-day expectations, see the [Repository Guidelines](AGENTS.md) covering
 
 We manage pull requests with [Graphite.dev](https://graphite.dev) so stacked diffs stay reviewable.
 
-1. Fork (or clone with access) and install the CLI: `brew install withgraphite/tap/graphite` (or see their docs for other installers).
-2. Authenticate once: `gt auth login`, then initialize in the repo root: `gt init`.
-3. Sync the latest `main`: `gt repo sync` (or `gt upstack onto origin/main` when rebasing a stack).
-4. Create a branch with Graphite: `gt branch create feature/<slug>`.
-5. Make your changes and run `bun run format && bun run type-check` (plus Maestro flows as needed).
-6. Stage files (`git add .`) and create commits via `gt commit`.
-7. Submit your stack: `gt stack submit` (or `gt submit` for single-PR flows); Graphite opens/updates GitHub PRs automatically.
-8. Use `gt stack list` / `gt status` to monitor stacks and `gt downstack` if you must edit earlier commits.
+1. Install the CLI: `brew install withgraphite/tap/graphite` (see their docs for other platforms).
+2. Authenticate and initialize once inside the repo: `gt auth login && gt init`.
+3. Keep trunk fresh: `gt checkout main` followed by `gt sync` to pull `main`, restack open branches, and prune merged ones.
+4. Make code changes, then create a branch + commit in one step: `gt create --all --message "feat(app): Add caregiver filters"`.
+5. Push the work with `gt submit` (single PR) or `gt submit --stack --reviewers alice` when stacking.
+6. Stack additional PRs by running `gt checkout` (interactive picker), editing, and repeating `gt create --all --message "..."`
+7. Address review feedback anywhere in the stack via `gt modify -a` (amend existing commit) or `gt modify -cam "Respond to feedback"` to add a new commit; Graphite automatically restacks upstack branches.
+8. Re-run `gt sync` whenever `main` moves or after merging to refresh local stacks and delete closed branches.
 
 ### Daily Command Loop
 
-- `gt repo sync` — pull latest `origin/main`, prune merged stacks, and refresh local state.
-- `gt branch create feature/<slug>` — start a new branch in the stack (one branch = one upcoming PR).
-- `git add <files>` + `bun run format && bun run type-check` (and Maestro flows when relevant) — stage and verify changes.
-- `gt commit -m "feat: ..."` — record commits with Graphite so stack metadata stays accurate.
-- `gt status` / `gt stack list` — inspect stack order and readiness before submitting.
-- `gt stack submit` (`gt submit` for a single branch) — open/update GitHub PRs for each branch in the stack.
-- `gt amend` + `gt stack submit --update` — adjust the latest commit after feedback and refresh the PR.
-- `gt downstack <branch>` / `gt upstack` — jump to earlier or later branches when you need to edit part of the stack.
-- `gt branch delete <branch>` — remove merged or abandoned branches once GitHub PRs are closed.
+- `gt sync` — fetch latest `main`, restack every open branch, and delete merged branches locally.
+- `gt checkout` / `gt top` — pick the branch/PR to work on (interactive picker) or jump to the top of your stack.
+- `gt create --all --message "feat: ..."` — stage all changes, create a new branch, and record the commit in one shot.
+- `gt submit --stack [--reviewers <handle>]` — push the current branch (or entire stack) and open/update GitHub PRs.
+- `gt modify -a` or `gt modify -cam "Respond to review"` — amend commits or add follow-up commits while automatically restacking upstack branches.
+- `gt log short` / `gt ls` — visualize the current stack to confirm ordering.
+- `gt restack` — manually restack if you resolved merge conflicts outside of `gt sync`.
+- `gt pr` — open the active branch’s PR in Graphite/GitHub to request review or merge.
 ### Code Standards
 
 - Follow existing code style (enforced by Biome)
@@ -1276,9 +1276,9 @@ We manage pull requests with [Graphite.dev](https://graphite.dev) so stacked dif
 ### PR Guidelines
 
 - Use Graphite’s PR templates; include clear “what/why” context and link related issues.
-- Keep stacks small—`gt stack submit` should only include review-ready commits.
+- Keep stacks small—`gt submit --stack` should only include review-ready branches.
 - Ensure CI checks pass (`bun run lint`, `bun run type-check`, Maestro flows) before updating the stack.
-- Request review via Graphite or GitHub, and use `gt amend` + `gt stack submit --update` to address feedback.
+- Request review via Graphite or GitHub, and use `gt modify -a` (or `gt modify -cam "Respond to review"`) followed by `gt submit --stack` to refresh the PR.
 
 ## 📄 License
 
