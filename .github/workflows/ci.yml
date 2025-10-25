@@ -215,7 +215,7 @@ jobs:
         run: supabase db lint
 
   sast_and_secrets:
-    name: SAST & Secrets
+    name: Semgrep & Gitleaks
     runs-on: ubuntu-latest
     needs: optimize_ci
     if: needs.optimize_ci.result != 'failure' && needs.optimize_ci.outputs.skip == 'false'
@@ -244,8 +244,14 @@ jobs:
         uses: github/codeql-action/upload-sarif@v3
         with:
           sarif_file: semgrep.sarif
+      - name: Install Gitleaks CLI
+        env:
+          GITLEAKS_LICENSE: ${{ secrets.GITLEAKS_LICENSE }}
+        run: |
+          curl -sSfL https://raw.githubusercontent.com/gitleaks/gitleaks/master/scripts/install.sh | bash -s -- v8.24.3
+          sudo install -m 755 gitleaks /usr/local/bin/gitleaks
 
-      - name: Figure base commit
+      - name: Determine PR base commit
         id: base_ref
         if: github.event_name == 'pull_request'
         run: |
@@ -257,13 +263,11 @@ jobs:
           fi
           echo "sha=${MERGE_BASE}" >> "$GITHUB_OUTPUT"
 
-      - name: Generate Gitleaks SARIF
+      - name: Run Gitleaks (push/main)
         if: github.event_name != 'pull_request'
         env:
           GITLEAKS_LICENSE: ${{ secrets.GITLEAKS_LICENSE }}
         run: |
-          curl -sSfL https://raw.githubusercontent.com/gitleaks/gitleaks/master/scripts/install.sh | bash -s -- v8.24.3
-          sudo install -m 755 gitleaks /usr/local/bin/gitleaks
           set +e
           gitleaks detect --source . --redact --report-format sarif --report-path gitleaks.sarif
           EXIT_CODE=$?
@@ -275,14 +279,11 @@ jobs:
             exit "$EXIT_CODE"
           fi
 
-      - name: Generate Gitleaks SARIF (PR)
+      - name: Run Gitleaks (pull_request diff)
         if: github.event_name == 'pull_request'
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GITLEAKS_LICENSE: ${{ secrets.GITLEAKS_LICENSE }}
         run: |
-          curl -sSfL https://raw.githubusercontent.com/gitleaks/gitleaks/master/scripts/install.sh | bash -s -- v8.24.3
-          sudo install -m 755 gitleaks /usr/local/bin/gitleaks
           START_SHA=${{ steps.base_ref.outputs.sha }}
           if [ -z "$START_SHA" ]; then
             echo "Could not determine merge base. Skipping PR diff scan."
