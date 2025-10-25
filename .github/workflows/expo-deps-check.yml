@@ -1,0 +1,26 @@
+name: Expo Dependency Check
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '30 9 * * 1'
+
+jobs:
+  expo_install_check:
+    runs-on: ubuntu-latest
+    env:
+      EXPO_NO_TELEMETRY: '1'
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.1.24
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Verify Expo dependencies
+        run: npx expo install --check

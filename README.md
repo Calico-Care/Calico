@@ -767,9 +767,19 @@ Seven automated GitHub Actions workflows handle code quality, security, builds, 
 - **Unit & RTL Tests** — executes `bun run test` (Jest + React Native Testing Library) to guard hooks, stores, and UI helpers.
 - **Maestro Flows** — on pull requests with UI changes, builds the Android debug APK, boots a headless emulator via `reactivecircus/android-emulator-runner`, installs the app, and runs `.maestro/flows` locally using the Maestro CLI.
 - **Supabase Guardrails** — when `supabase/**` changes, installs the Supabase CLI and runs `supabase db lint` to catch migration regressions before they reach production.
-- **SAST & Secrets** — runs `semgrep/semgrep-action` (React Native + OWASP rules) and `gitleaks/gitleaks-action` to block code scanning issues; SARIF results are uploaded to GitHub code scanning.
+- **SAST & Secrets** — runs Semgrep CLI (React Native + OWASP rules) and Gitleaks; SARIF results are uploaded to GitHub code scanning.
 
 **Purpose**: Ensure code quality before merging. Configure a repository secret named `GRAPHITE_CI_TOKEN` (Graphite API token) or the optimizer will fail and block the lint job.
+
+### 2. Expo Dependency Drift (`expo-deps-check.yml`)
+
+- **Trigger**: Weekly cron (Monday 09:30 UTC) or manual dispatch.
+- **Job**: Installs dependencies with Bun and runs `npx expo install --check`.
+- **Goal**: Surface version mismatches early so `expo doctor` never fails unexpectedly; pair this with Dependabot PRs for Expo packages.
+
+### Dependabot
+
+`.github/dependabot.yml` is scoped to Expo SDK packages (`expo-*`, `react-native`, `react`, `@sentry/react-native`, etc.) and opens grouped weekly PRs so you can review upgrades in one go without noise from unrelated libraries.
 
 ### 2. EAS Build (`eas-build.yml`)
 

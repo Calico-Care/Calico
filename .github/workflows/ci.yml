@@ -228,7 +228,7 @@ jobs:
 
       - name: Run Semgrep scan
         run: |
-          python3 -m semgrep scan \
+          semgrep scan \
             --config p/react-native \
             --config p/owasp-top-ten \
             --sarif --output semgrep.sarif \
