@@ -312,17 +312,3 @@ jobs:
         uses: github/codeql-action/upload-sarif@v3
         with:
           sarif_file: gitleaks.sarif
-      - name: Figure base commit
-        id: base_ref
-        if: github.event_name == 'pull_request'
-        run: |
-          git fetch origin ${{ github.event.pull_request.base.sha }} --depth=1
-          MERGE_BASE=$(git merge-base ${{ github.event.pull_request.base.sha }} ${{ github.sha }})
-          if [ -z "$MERGE_BASE" ]; then
-            echo "Merge base missing"
-            exit 1
-          fi
-          echo "sha=${MERGE_BASE}" >> "$GITHUB_OUTPUT"
-
-      - name: Generate Gitleaks SARIF
-        if: github.event_name != 'pull_request'
