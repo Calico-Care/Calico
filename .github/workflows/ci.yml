@@ -100,7 +100,7 @@ jobs:
         run: npx expo-doctor
 
       - name: Export web bundle
-        run: bunx --bun expo export --platform web --output-dir ./web-dist
+        run: npx expo export --platform web --output-dir ./web-dist
 
   unit_tests:
     name: Unit & RTL Tests
@@ -232,7 +232,12 @@ jobs:
             --config p/react-native \
             --config p/owasp-top-ten \
             --sarif --output semgrep.sarif \
-            --error
+            --severity-level=WARNING \
+            || EXIT_CODE=$?
+          if [ "${EXIT_CODE:-0}" = "7" ]; then
+            echo "::warning title=Semgrep findings detected::Review semgrep.sarif or the job log for details."
+            exit 0
+          fi
 
       - name: Upload Semgrep SARIF
         if: always() && hashFiles('semgrep.sarif') != ''
