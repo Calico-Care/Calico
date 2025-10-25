@@ -11,6 +11,7 @@ permissions:
   issues: write
   contents: read
   pull-requests: read
+  security-events: write
 
 
 jobs:
@@ -26,6 +27,32 @@ jobs:
         uses: withgraphite/graphite-ci-action@main
         with:
           graphite_token: ${{ secrets.GRAPHITE_CI_TOKEN }}
+
+  detect_changes:
+    name: Detect Changes
+    runs-on: ubuntu-latest
+    needs: optimize_ci
+    if: needs.optimize_ci.result != 'failure' && needs.optimize_ci.outputs.skip == 'false'
+    outputs:
+      ui: ${{ steps.filter.outputs.ui }}
+      supabase: ${{ steps.filter.outputs.supabase }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Determine changed paths
+        id: filter
+        uses: dorny/paths-filter@v3
+        with:
+          filters: |
+            ui:
+              - 'app/**'
+              - 'components/**'
+              - '.maestro/**'
+            supabase:
+              - 'supabase/**'
 
   lint:
     name: Lint & Type Check
@@ -49,3 +76,176 @@ jobs:
 
       - name: Run Type Check
         run: bun run type-check
+
+  runtime_smoke:
+    name: Runtime Smoke
+    runs-on: ubuntu-latest
+    needs: optimize_ci
+    if: needs.optimize_ci.result != 'failure' && needs.optimize_ci.outputs.skip == 'false'
+    env:
+      EXPO_NO_TELEMETRY: '1'
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.1.24
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Run Expo doctor
+        run: bunx --bun expo doctor
+
+      - name: Export web bundle
+        run: bunx --bun expo export --platform web --output-dir ./web-dist
+
+  unit_tests:
+    name: Unit & RTL Tests
+    runs-on: ubuntu-latest
+    needs: optimize_ci
+    if: needs.optimize_ci.result != 'failure' && needs.optimize_ci.outputs.skip == 'false'
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.1.24
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Run unit tests
+        run: bun run test
+
+  maestro_flows:
+    name: Maestro Flows
+    runs-on: ubuntu-latest
+    needs:
+      - optimize_ci
+      - detect_changes
+    if: >
+      needs.optimize_ci.result != 'failure' &&
+      needs.optimize_ci.outputs.skip == 'false' &&
+      github.event_name == 'pull_request' &&
+      needs.detect_changes.outputs.ui == 'true'
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.1.24
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
+        with:
+          packages: |
+            platform-tools
+            platforms;android-34
+            build-tools;34.0.0
+
+      - name: Assemble Android debug build
+        run: |
+          cd android
+          ./gradlew assembleDebug
+
+      - name: Run Maestro tests
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 34
+          arch: x86_64
+          target: google_apis
+          script: |
+            curl -Ls "https://get.maestro.mobile.dev" | bash
+            export PATH="$HOME/.maestro/bin:$PATH"
+            adb install -r android/app/build/outputs/apk/debug/app-debug.apk
+            maestro test .maestro/flows --format junit --output /tmp/maestro-report.xml
+
+      - name: Upload Maestro report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: maestro-report
+          path: /tmp/maestro-report.xml
+          if-no-files-found: ignore
+
+      - name: Upload Maestro workspace
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: maestro-workspace
+          path: ~/.maestro
+          if-no-files-found: ignore
+
+  supabase_guardrails:
+    name: Supabase Guardrails
+    runs-on: ubuntu-latest
+    needs:
+      - optimize_ci
+      - detect_changes
+    if: >
+      needs.optimize_ci.result != 'failure' &&
+      needs.optimize_ci.outputs.skip == 'false' &&
+      needs.detect_changes.outputs.supabase == 'true'
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Supabase CLI
+        uses: supabase/setup-cli@v1
+        with:
+          version: latest
+
+      - name: Lint Supabase migrations
+        run: supabase db lint
+
+  sast_and_secrets:
+    name: SAST & Secrets
+    runs-on: ubuntu-latest
+    needs: optimize_ci
+    if: needs.optimize_ci.result != 'failure' && needs.optimize_ci.outputs.skip == 'false'
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Run Semgrep
+        uses: semgrep/semgrep-action@v1
+        with:
+          config: |
+            p/react-native
+            p/owasp-top-ten
+          generateSarif: true
+
+      - name: Upload Semgrep SARIF
+        if: always()
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: semgrep.sarif
+
+      - name: Run Gitleaks
+        uses: gitleaks/gitleaks-action@v2
+        with:
+          report-format: sarif
+          report-path: gitleaks.sarif
+          redact: true
+
+      - name: Upload Gitleaks SARIF
+        if: always()
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: gitleaks.sarif
