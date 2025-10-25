@@ -260,6 +260,35 @@ jobs:
           set +e
           gitleaks detect --source . --redact --report-format sarif --report-path gitleaks.sarif
           EXIT_CODE=$?
+          if [ "$EXIT_CODE" = "1" ]; then
+            echo "::warning title=Gitleaks findings detected::Secrets detected. Review gitleaks.sarif for details."
+            exit 0
+          elif [ "$EXIT_CODE" != "0" ]; then
+            exit "$EXIT_CODE"
+          fi
+
+      - name: Generate Gitleaks SARIF (PR)
+        if: github.event_name == 'pull_request'
+        env:
+          GITLEAKS_LICENSE: ${{ secrets.GITLEAKS_LICENSE }}
+        run: |
+          curl -sSfL https://raw.githubusercontent.com/gitleaks/gitleaks/master/scripts/install.sh | bash -s -- v8.24.3
+          sudo install -m 755 gitleaks /usr/local/bin/gitleaks
+          START_SHA=${{ steps.base_ref.outputs.sha }}
+          if [ -z "$START_SHA" ]; then
+            echo "Could not determine merge base. Skipping PR diff scan."
+            exit 0
+          fi
+          set +e
+          gitleaks detect --source . \
+            --redact \
+            --report-format sarif \
+            --report-path gitleaks.sarif \
+            --log-level warn \
+            --no-banner \
+            --exit-code 2 \
+            --log-opts="--no-merges --first-parent ${START_SHA}..${{ github.sha }}"
+          EXIT_CODE=$?
           set -e
           if [ "$EXIT_CODE" = "1" ]; then
             echo "::warning title=Gitleaks findings detected::Secrets detected. Review gitleaks.sarif for details."
@@ -273,3 +302,17 @@ jobs:
         uses: github/codeql-action/upload-sarif@v3
         with:
           sarif_file: gitleaks.sarif
+      - name: Figure base commit
+        id: base_ref
+        if: github.event_name == 'pull_request'
+        run: |
+          git fetch origin ${{ github.event.pull_request.base.sha }} --depth=1
+          MERGE_BASE=$(git merge-base ${{ github.event.pull_request.base.sha }} ${{ github.sha }})
+          if [ -z "$MERGE_BASE" ]; then
+            echo "Merge base missing"
+            exit 1
+          fi
+          echo "sha=${MERGE_BASE}" >> "$GITHUB_OUTPUT"
+
+      - name: Generate Gitleaks SARIF
+        if: github.event_name != 'pull_request'
