@@ -245,13 +245,20 @@ jobs:
         with:
           sarif_file: semgrep.sarif
 
-      - name: Run Gitleaks
-        uses: gitleaks/gitleaks-action@v2
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          GITLEAKS_LICENSE: ${{ secrets.GITLEAKS_LICENSE }}
+      - name: Figure base commit
+        id: base_ref
+        if: github.event_name == 'pull_request'
+        run: |
+          git fetch origin ${{ github.event.pull_request.base.sha }} --depth=1
+          MERGE_BASE=$(git merge-base ${{ github.event.pull_request.base.sha }} ${{ github.sha }})
+          if [ -z "$MERGE_BASE" ]; then
+            echo "Merge base missing"
+            exit 1
+          fi
+          echo "sha=${MERGE_BASE}" >> "$GITHUB_OUTPUT"
 
       - name: Generate Gitleaks SARIF
+        if: github.event_name != 'pull_request'
         env:
           GITLEAKS_LICENSE: ${{ secrets.GITLEAKS_LICENSE }}
         run: |
@@ -260,6 +267,7 @@ jobs:
           set +e
           gitleaks detect --source . --redact --report-format sarif --report-path gitleaks.sarif
           EXIT_CODE=$?
+          set -e
           if [ "$EXIT_CODE" = "1" ]; then
             echo "::warning title=Gitleaks findings detected::Secrets detected. Review gitleaks.sarif for details."
             exit 0
@@ -270,6 +278,7 @@ jobs:
       - name: Generate Gitleaks SARIF (PR)
         if: github.event_name == 'pull_request'
         env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GITLEAKS_LICENSE: ${{ secrets.GITLEAKS_LICENSE }}
         run: |
           curl -sSfL https://raw.githubusercontent.com/gitleaks/gitleaks/master/scripts/install.sh | bash -s -- v8.24.3
