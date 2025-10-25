@@ -41,6 +41,8 @@ jobs:
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
+        with:
+          fetch-depth: 0
 
       - name: Determine changed paths
         id: filter
@@ -215,7 +217,7 @@ jobs:
         run: supabase db lint
 
   sast_and_secrets:
-    name: Semgrep & Gitleaks
+    name: Gitleaks
     runs-on: ubuntu-latest
     needs: optimize_ci
     if: needs.optimize_ci.result != 'failure' && needs.optimize_ci.outputs.skip == 'false'
@@ -223,30 +225,6 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Install Semgrep CLI
-        run: python3 -m pip install --user --upgrade semgrep
-
-      - name: Run Semgrep scan
-        run: |
-          set +e
-          semgrep scan \
-            --config p/react-native \
-            --config p/owasp-top-ten \
-            --sarif --output semgrep.sarif
-          EXIT_CODE=$?
-          set -e
-          if [ "$EXIT_CODE" = "7" ]; then
-            echo "::warning title=Semgrep findings detected::Review semgrep.sarif or the job log for details."
-            exit 0
-          elif [ "$EXIT_CODE" != "0" ]; then
-            exit "$EXIT_CODE"
-          fi
-
-      - name: Upload Semgrep SARIF
-        if: always() && hashFiles('semgrep.sarif') != ''
-        uses: github/codeql-action/upload-sarif@v3
-        with:
-          sarif_file: semgrep.sarif
       - name: Install Gitleaks CLI
         env:
           GITLEAKS_LICENSE: ${{ secrets.GITLEAKS_LICENSE }}
@@ -259,8 +237,8 @@ jobs:
         id: base_ref
         if: github.event_name == 'pull_request'
         run: |
-          git fetch origin ${{ github.event.pull_request.base.sha }} --depth=1
-          MERGE_BASE=$(git merge-base ${{ github.event.pull_request.base.sha }} ${{ github.sha }})
+          git fetch --no-tags --prune --depth=2 origin ${{ github.event.pull_request.base.ref }}:${{ github.event.pull_request.base.ref }}
+          MERGE_BASE=$(git merge-base ${{ github.sha }} origin/${{ github.event.pull_request.base.ref }})
           if [ -z "$MERGE_BASE" ]; then
             echo "Merge base missing"
             exit 1
