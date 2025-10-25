@@ -248,9 +248,25 @@ jobs:
       - name: Run Gitleaks
         uses: gitleaks/gitleaks-action@v2
         env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GITLEAKS_LICENSE: ${{ secrets.GITLEAKS_LICENSE }}
-        with:
-          args: detect --source . --no-banner --redact --report-format sarif --report-path gitleaks.sarif
+
+      - name: Generate Gitleaks SARIF
+        env:
+          GITLEAKS_LICENSE: ${{ secrets.GITLEAKS_LICENSE }}
+        run: |
+          curl -sSfL https://raw.githubusercontent.com/gitleaks/gitleaks/master/scripts/install.sh | bash -s -- v8.24.3
+          sudo install -m 755 gitleaks /usr/local/bin/gitleaks
+          set +e
+          gitleaks detect --source . --redact --report-format sarif --report-path gitleaks.sarif
+          EXIT_CODE=$?
+          set -e
+          if [ "$EXIT_CODE" = "1" ]; then
+            echo "::warning title=Gitleaks findings detected::Secrets detected. Review gitleaks.sarif for details."
+            exit 0
+          elif [ "$EXIT_CODE" != "0" ]; then
+            exit "$EXIT_CODE"
+          fi
 
       - name: Upload Gitleaks SARIF
         if: always() && hashFiles('gitleaks.sarif') != ''

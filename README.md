@@ -1,4 +1,5 @@
 # Calico
+<img alt="gitleaks badge" src="https://img.shields.io/badge/protected%20by-gitleaks-blue">
 
 A production-ready React Native application built with Expo, featuring modern architecture, type safety, and comprehensive developer tooling.
 
