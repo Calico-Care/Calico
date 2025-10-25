@@ -40,7 +40,7 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
-          fetch-depth: 0
+          fetch-depth: 2
 
       - name: Determine changed paths
         id: filter
@@ -122,6 +122,15 @@ jobs:
       - name: Run unit tests
         run: bun run test
 
+      - name: Upload test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-results
+          path: |
+            coverage/
+            junit.xml
+          if-no-files-found: ignore
   maestro_flows:
     name: Maestro Flows
     runs-on: ubuntu-latest
@@ -164,6 +173,12 @@ jobs:
           cd android
           ./gradlew assembleDebug
 
+      - name: Cache Maestro
+        uses: actions/cache@v4
+        with:
+          path: ~/.maestro
+          key: maestro-${{ runner.os }}
+
       - name: Run Maestro tests
         uses: reactivecircus/android-emulator-runner@v2
         with:
@@ -171,11 +186,13 @@ jobs:
           arch: x86_64
           target: google_apis
           script: |
-            curl -Ls "https://get.maestro.mobile.dev" | bash
+            if [ ! -f "$HOME/.maestro/bin/maestro" ]; then
+              curl -Ls "https://get.maestro.mobile.dev" | bash
+            fi
             export PATH="$HOME/.maestro/bin:$PATH"
+            maestro --version
             adb install -r android/app/build/outputs/apk/debug/app-debug.apk
             maestro test .maestro/flows --format junit --output /tmp/maestro-report.xml
-
       - name: Upload Maestro report
         if: always()
         uses: actions/upload-artifact@v4

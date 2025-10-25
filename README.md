@@ -770,7 +770,28 @@ Seven automated GitHub Actions workflows handle code quality, security, builds, 
 - **Supabase Guardrails** — when `supabase/**` changes, installs the Supabase CLI and runs `supabase db lint` to catch migration regressions before they reach production.
 - **Secrets Scan** — runs Gitleaks to block leaked credentials; SARIF results are uploaded to GitHub code scanning.
 
+- **Graphite CI Optimizer** — runs `withgraphite/graphite-ci-action@main` with `GRAPHITE_CI_TOKEN` to decide whether downstream work can be skipped.
+- **Detect Changes** — uses `dorny/paths-filter` to determine whether UI (`app/`, `components/`, `.maestro/`) or Supabase files changed so path-gated jobs only run when needed.
+- **Lint & Type Check** — Bun install + Biome + `tsc --noEmit`.
+- **Runtime Smoke** — installs dependencies, runs `expo doctor`, then `expo export --platform web` as a quick runtime sanity check without consuming EAS credits.
+- **Unit & RTL Tests** — executes `bun run test` (Jest + React Native Testing Library) to guard hooks, stores, and UI helpers.
+- **Maestro Flows** — on pull requests with UI changes, builds the Android debug APK, boots a headless emulator via `reactivecircus/android-emulator-runner`, installs the app, and runs `.maestro/flows` locally using the Maestro CLI.
+- **Supabase Guardrails** — when `supabase/**` changes, installs the Supabase CLI and runs `supabase db lint` to catch migration regressions before they reach production.
+- **SAST & Secrets** — runs `semgrep/semgrep-action` (React Native + OWASP rules) and `gitleaks/gitleaks-action` to block code scanning issues; SARIF results are uploaded to GitHub code scanning.
+
 **Purpose**: Ensure code quality before merging. Configure a repository secret named `GRAPHITE_CI_TOKEN` (Graphite API token) or the optimizer will fail and block the lint job.
+
+**Required Setup**:
+
+1. Create a Graphite API token:
+   - Visit https://app.graphite.dev/activate
+   - Generate a new CI token for your repository
+2. Add the secret to GitHub:
+   - Go to Settings → Secrets and variables → Actions
+   - Create a new repository secret named `GRAPHITE_CI_TOKEN`
+   - Paste the Graphite token as the value
+
+Without this token, the CI workflow will fail early and block all downstream jobs.
 
 ### 2. Expo Dependency Drift (`expo-deps-check.yml`)
 
@@ -778,9 +799,22 @@ Seven automated GitHub Actions workflows handle code quality, security, builds, 
 - **Job**: Installs dependencies with Bun and runs `npx expo install --check`.
 - **Goal**: Surface version mismatches early so `expo doctor` never fails unexpectedly; pair this with Dependabot PRs for Expo packages.
 
+**Tips**:
+- Use the same Bun cache strategy as the main CI job (see Continuous Integration above)
+- Review generated PRs promptly to catch breaking changes before they reach main
+- Consider running `expo doctor` locally before pushing to prevent surprises in CI
+
 ### Dependabot
 
 `.github/dependabot.yml` is scoped to Expo SDK packages (`expo-*`, `react-native`, `react`, `@sentry/react-native`, etc.) and opens grouped weekly PRs so you can review upgrades in one go without noise from unrelated libraries.
+
+**Configuration**:
+- Scoped to Expo ecosystem to reduce noise
+- Grouped by dependency type for easier review
+- Weekly schedule to batch related updates
+- Includes lockfile maintenance to keep `bun.lockb` fresh
+
+**Workflow**: After Dependabot opens a PR, the main `ci.yml` runs automatically. Ensure all jobs pass (lint, tests, Maestro flows) before merging, and prioritize PRs that upgrade core packages like `react-native` or `expo`.
 
 ### 2. EAS Build (`eas-build.yml`)
 
