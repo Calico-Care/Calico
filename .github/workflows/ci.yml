@@ -68,8 +68,29 @@ jobs:
         with:
           bun-version: 1.1.24
 
+      - name: Restore Bun cache
+        id: bun-cache
+        uses: actions/cache/restore@v4
+        with:
+          path: |
+            ~/.bun/install/cache
+            node_modules
+          key: ${{ runner.os }}-bun-${{ github.job }}-${{ hashFiles('bun.lock', 'package.json') }}
+          restore-keys: |
+            ${{ runner.os }}-bun-${{ github.job }}-
+
       - name: Install dependencies
+        if: steps.bun-cache.outputs.cache-hit != 'true'
         run: bun install --frozen-lockfile
+
+      - name: Save Bun cache
+        if: steps.bun-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: |
+            ~/.bun/install/cache
+            node_modules
+          key: ${{ runner.os }}-bun-${{ github.job }}-${{ hashFiles('bun.lock', 'package.json') }}
 
       - name: Run Biome
         run: bun run lint
@@ -93,8 +114,29 @@ jobs:
         with:
           bun-version: 1.1.24
 
+      - name: Restore Bun cache
+        id: bun-cache
+        uses: actions/cache/restore@v4
+        with:
+          path: |
+            ~/.bun/install/cache
+            node_modules
+          key: ${{ runner.os }}-bun-${{ github.job }}-${{ hashFiles('bun.lock', 'package.json') }}
+          restore-keys: |
+            ${{ runner.os }}-bun-${{ github.job }}-
+
       - name: Install dependencies
+        if: steps.bun-cache.outputs.cache-hit != 'true'
         run: bun install --frozen-lockfile
+
+      - name: Save Bun cache
+        if: steps.bun-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: |
+            ~/.bun/install/cache
+            node_modules
+          key: ${{ runner.os }}-bun-${{ github.job }}-${{ hashFiles('bun.lock', 'package.json') }}
 
       - name: Run Expo doctor
         run: npx expo-doctor
@@ -116,8 +158,29 @@ jobs:
         with:
           bun-version: 1.1.24
 
+      - name: Restore Bun cache
+        id: bun-cache
+        uses: actions/cache/restore@v4
+        with:
+          path: |
+            ~/.bun/install/cache
+            node_modules
+          key: ${{ runner.os }}-bun-${{ github.job }}-${{ hashFiles('bun.lock', 'package.json') }}
+          restore-keys: |
+            ${{ runner.os }}-bun-${{ github.job }}-
+
       - name: Install dependencies
+        if: steps.bun-cache.outputs.cache-hit != 'true'
         run: bun install --frozen-lockfile
+
+      - name: Save Bun cache
+        if: steps.bun-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: |
+            ~/.bun/install/cache
+            node_modules
+          key: ${{ runner.os }}-bun-${{ github.job }}-${{ hashFiles('bun.lock', 'package.json') }}
 
       - name: Run unit tests
         run: bun run test
@@ -151,14 +214,47 @@ jobs:
         with:
           bun-version: 1.1.24
 
+      - name: Restore Bun cache
+        id: bun-cache
+        uses: actions/cache/restore@v4
+        with:
+          path: |
+            ~/.bun/install/cache
+            node_modules
+          key: ${{ runner.os }}-bun-${{ github.job }}-${{ hashFiles('bun.lock', 'package.json') }}
+          restore-keys: |
+            ${{ runner.os }}-bun-${{ github.job }}-
+
       - name: Install dependencies
+        if: steps.bun-cache.outputs.cache-hit != 'true'
         run: bun install --frozen-lockfile
+
+      - name: Save Bun cache
+        if: steps.bun-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: |
+            ~/.bun/install/cache
+            node_modules
+          key: ${{ runner.os }}-bun-${{ github.job }}-${{ hashFiles('bun.lock', 'package.json') }}
 
       - name: Setup Java
         uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: '17'
+
+      - name: Restore Android SDK cache
+        id: android-cache
+        uses: actions/cache/restore@v4
+        with:
+          path: |
+            ~/.android
+            ~/.gradle
+            /usr/local/lib/android/sdk
+          key: ${{ runner.os }}-android-sdk-${{ hashFiles('**/build.gradle', '**/gradle-wrapper.properties') }}
+          restore-keys: |
+            ${{ runner.os }}-android-sdk-
 
       - name: Setup Android SDK
         uses: android-actions/setup-android@v3
@@ -208,6 +304,16 @@ jobs:
           name: maestro-workspace
           path: ~/.maestro
           if-no-files-found: ignore
+
+      - name: Save Android SDK cache
+        if: steps.android-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: |
+            ~/.android
+            ~/.gradle
+            /usr/local/lib/android/sdk
+          key: ${{ runner.os }}-android-sdk-${{ hashFiles('**/build.gradle', '**/gradle-wrapper.properties') }}
 
   supabase_guardrails:
     name: Supabase Guardrails
