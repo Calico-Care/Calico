@@ -247,10 +247,10 @@ jobs:
 
       - name: Run Gitleaks
         uses: gitleaks/gitleaks-action@v2
+        env:
+          GITLEAKS_LICENSE: ${{ secrets.GITLEAKS_LICENSE }}
         with:
-          report-format: sarif
-          report-path: gitleaks.sarif
-          redact: true
+          args: detect --source . --no-banner --redact --report-format sarif --report-path gitleaks.sarif
 
       - name: Upload Gitleaks SARIF
         if: always() && hashFiles('gitleaks.sarif') != ''
