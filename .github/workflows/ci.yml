@@ -11,6 +11,7 @@ permissions:
   issues: write
   contents: read
   pull-requests: read
+  security-events: write
 
 
 jobs:
@@ -27,6 +28,32 @@ jobs:
         with:
           graphite_token: ${{ secrets.GRAPHITE_CI_TOKEN }}
 
+  detect_changes:
+    name: Detect Changes
+    runs-on: ubuntu-latest
+    needs: optimize_ci
+    if: needs.optimize_ci.result != 'failure' && needs.optimize_ci.outputs.skip == 'false'
+    outputs:
+      ui: ${{ steps.filter.outputs.ui }}
+      supabase: ${{ steps.filter.outputs.supabase }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+
+      - name: Determine changed paths
+        id: filter
+        uses: dorny/paths-filter@v3
+        with:
+          filters: |
+            ui:
+              - 'app/**'
+              - 'components/**'
+              - '.maestro/**'
+            supabase:
+              - 'supabase/**'
+
   lint:
     name: Lint & Type Check
     runs-on: ubuntu-latest
@@ -41,11 +68,351 @@ jobs:
         with:
           bun-version: 1.1.24
 
+      - name: Restore Bun cache
+        id: bun-cache
+        uses: actions/cache/restore@v4
+        with:
+          path: |
+            ~/.bun/install/cache
+            node_modules
+          key: ${{ runner.os }}-bun-${{ github.job }}-${{ hashFiles('bun.lock', 'package.json') }}
+          restore-keys: |
+            ${{ runner.os }}-bun-${{ github.job }}-
+
       - name: Install dependencies
+        if: steps.bun-cache.outputs.cache-hit != 'true'
         run: bun install --frozen-lockfile
+
+      - name: Save Bun cache
+        if: steps.bun-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: |
+            ~/.bun/install/cache
+            node_modules
+          key: ${{ runner.os }}-bun-${{ github.job }}-${{ hashFiles('bun.lock', 'package.json') }}
 
       - name: Run Biome
         run: bun run lint
 
       - name: Run Type Check
         run: bun run type-check
+
+  runtime_smoke:
+    name: Runtime Smoke
+    runs-on: ubuntu-latest
+    needs: optimize_ci
+    if: needs.optimize_ci.result != 'failure' && needs.optimize_ci.outputs.skip == 'false'
+    env:
+      EXPO_NO_TELEMETRY: '1'
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.1.24
+
+      - name: Restore Bun cache
+        id: bun-cache
+        uses: actions/cache/restore@v4
+        with:
+          path: |
+            ~/.bun/install/cache
+            node_modules
+          key: ${{ runner.os }}-bun-${{ github.job }}-${{ hashFiles('bun.lock', 'package.json') }}
+          restore-keys: |
+            ${{ runner.os }}-bun-${{ github.job }}-
+
+      - name: Install dependencies
+        if: steps.bun-cache.outputs.cache-hit != 'true'
+        run: bun install --frozen-lockfile
+
+      - name: Save Bun cache
+        if: steps.bun-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: |
+            ~/.bun/install/cache
+            node_modules
+          key: ${{ runner.os }}-bun-${{ github.job }}-${{ hashFiles('bun.lock', 'package.json') }}
+
+      - name: Run Expo doctor
+        run: npx expo-doctor
+
+      - name: Export web bundle
+        run: npx expo export --platform web --output-dir ./web-dist
+
+  unit_tests:
+    name: Unit & RTL Tests
+    runs-on: ubuntu-latest
+    needs: optimize_ci
+    if: needs.optimize_ci.result != 'failure' && needs.optimize_ci.outputs.skip == 'false'
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.1.24
+
+      - name: Restore Bun cache
+        id: bun-cache
+        uses: actions/cache/restore@v4
+        with:
+          path: |
+            ~/.bun/install/cache
+            node_modules
+          key: ${{ runner.os }}-bun-${{ github.job }}-${{ hashFiles('bun.lock', 'package.json') }}
+          restore-keys: |
+            ${{ runner.os }}-bun-${{ github.job }}-
+
+      - name: Install dependencies
+        if: steps.bun-cache.outputs.cache-hit != 'true'
+        run: bun install --frozen-lockfile
+
+      - name: Save Bun cache
+        if: steps.bun-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: |
+            ~/.bun/install/cache
+            node_modules
+          key: ${{ runner.os }}-bun-${{ github.job }}-${{ hashFiles('bun.lock', 'package.json') }}
+
+      - name: Run unit tests
+        run: bun run test:ci
+
+      - name: Upload test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-results
+          path: |
+            coverage/
+            junit.xml
+          if-no-files-found: ignore
+  maestro_flows:
+    name: Maestro Flows
+    runs-on: ubuntu-latest
+    needs:
+      - optimize_ci
+      - detect_changes
+    if: >
+      needs.optimize_ci.result != 'failure' &&
+      needs.optimize_ci.outputs.skip == 'false' &&
+      github.event_name == 'pull_request' &&
+      needs.detect_changes.outputs.ui == 'true'
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.1.24
+
+      - name: Restore Bun cache
+        id: bun-cache
+        uses: actions/cache/restore@v4
+        with:
+          path: |
+            ~/.bun/install/cache
+            node_modules
+          key: ${{ runner.os }}-bun-${{ github.job }}-${{ hashFiles('bun.lock', 'package.json') }}
+          restore-keys: |
+            ${{ runner.os }}-bun-${{ github.job }}-
+
+      - name: Install dependencies
+        if: steps.bun-cache.outputs.cache-hit != 'true'
+        run: bun install --frozen-lockfile
+
+      - name: Save Bun cache
+        if: steps.bun-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: |
+            ~/.bun/install/cache
+            node_modules
+          key: ${{ runner.os }}-bun-${{ github.job }}-${{ hashFiles('bun.lock', 'package.json') }}
+
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Restore Android SDK cache
+        id: android-cache
+        uses: actions/cache/restore@v4
+        with:
+          path: |
+            ~/.android
+            ~/.gradle
+            /usr/local/lib/android/sdk
+          key: ${{ runner.os }}-android-sdk-${{ hashFiles('**/build.gradle', '**/gradle-wrapper.properties') }}
+          restore-keys: |
+            ${{ runner.os }}-android-sdk-
+
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
+        with:
+          packages: |
+            platform-tools
+            platforms;android-34
+            build-tools;34.0.0
+
+      - name: Assemble Android debug build
+        run: |
+          cd android
+          ./gradlew assembleDebug
+
+      - name: Cache Maestro
+        uses: actions/cache@v4
+        with:
+          path: ~/.maestro
+          key: maestro-${{ runner.os }}
+
+      - name: Run Maestro tests
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 34
+          arch: x86_64
+          target: google_apis
+          script: |
+            if [ ! -f "$HOME/.maestro/bin/maestro" ]; then
+              curl -Ls "https://get.maestro.mobile.dev" | bash
+            fi
+            export PATH="$HOME/.maestro/bin:$PATH"
+            maestro --version
+            adb install -r android/app/build/outputs/apk/debug/app-debug.apk
+            maestro test .maestro/flows --format junit --output /tmp/maestro-report.xml
+      - name: Upload Maestro report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: maestro-report
+          path: /tmp/maestro-report.xml
+          if-no-files-found: ignore
+
+      - name: Upload Maestro workspace
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: maestro-workspace
+          path: ~/.maestro
+          if-no-files-found: ignore
+
+      - name: Save Android SDK cache
+        if: steps.android-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: |
+            ~/.android
+            ~/.gradle
+            /usr/local/lib/android/sdk
+          key: ${{ runner.os }}-android-sdk-${{ hashFiles('**/build.gradle', '**/gradle-wrapper.properties') }}
+
+  supabase_guardrails:
+    name: Supabase Guardrails
+    runs-on: ubuntu-latest
+    needs:
+      - optimize_ci
+      - detect_changes
+    if: >
+      needs.optimize_ci.result != 'failure' &&
+      needs.optimize_ci.outputs.skip == 'false' &&
+      needs.detect_changes.outputs.supabase == 'true'
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Supabase CLI
+        uses: supabase/setup-cli@v1
+        with:
+          version: latest
+
+      - name: Lint Supabase migrations
+        run: supabase db lint
+
+  sast_and_secrets:
+    name: Gitleaks
+    runs-on: ubuntu-latest
+    needs: optimize_ci
+    if: needs.optimize_ci.result != 'failure' && needs.optimize_ci.outputs.skip == 'false'
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Install Gitleaks CLI
+        env:
+          GITLEAKS_LICENSE: ${{ secrets.GITLEAKS_LICENSE }}
+        run: |
+          curl -sSL https://github.com/gitleaks/gitleaks/releases/download/v8.24.3/gitleaks_8.24.3_linux_x64.tar.gz -o gitleaks.tar.gz
+          tar -xzf gitleaks.tar.gz gitleaks
+          sudo install -m 755 gitleaks /usr/local/bin/gitleaks
+
+      - name: Determine PR base commit
+        id: base_ref
+        if: github.event_name == 'pull_request'
+        run: |
+          MERGE_BASE=$(git merge-base HEAD origin/${{ github.event.pull_request.base.ref }})
+          if [ -z "$MERGE_BASE" ]; then
+            echo "Merge base missing"
+            exit 1
+          fi
+          echo "sha=${MERGE_BASE}" >> "$GITHUB_OUTPUT"
+
+      - name: Run Gitleaks (push/main)
+        if: github.event_name != 'pull_request'
+        env:
+          GITLEAKS_LICENSE: ${{ secrets.GITLEAKS_LICENSE }}
+        run: |
+          set +e
+          gitleaks detect --source . --redact --report-format sarif --report-path gitleaks.sarif
+          EXIT_CODE=$?
+          set -e
+          if [ "$EXIT_CODE" = "1" ]; then
+            echo "::warning title=Gitleaks findings detected::Secrets detected. Review gitleaks.sarif for details."
+            exit 0
+          elif [ "$EXIT_CODE" != "0" ]; then
+            exit "$EXIT_CODE"
+          fi
+
+      - name: Run Gitleaks (pull_request diff)
+        if: github.event_name == 'pull_request'
+        env:
+          GITLEAKS_LICENSE: ${{ secrets.GITLEAKS_LICENSE }}
+        run: |
+          START_SHA=${{ steps.base_ref.outputs.sha }}
+          if [ -z "$START_SHA" ]; then
+            echo "Could not determine merge base. Skipping PR diff scan."
+            exit 0
+          fi
+          set +e
+          gitleaks detect --source . \
+            --redact \
+            --report-format sarif \
+            --report-path gitleaks.sarif \
+            --log-level warn \
+            --no-banner \
+            --exit-code 2 \
+            --log-opts="--no-merges --first-parent ${START_SHA}..${{ github.sha }}"
+          EXIT_CODE=$?
+          set -e
+          if [ "$EXIT_CODE" = "1" ]; then
+            echo "::warning title=Gitleaks findings detected::Secrets detected. Review gitleaks.sarif for details."
+            exit 0
+          elif [ "$EXIT_CODE" != "0" ]; then
+            exit "$EXIT_CODE"
+          fi
+
+      - name: Upload Gitleaks SARIF
+        if: always() && hashFiles('gitleaks.sarif') != ''
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: gitleaks.sarif
