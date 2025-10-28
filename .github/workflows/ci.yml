@@ -259,10 +259,8 @@ jobs:
       - name: Setup Android SDK
         uses: android-actions/setup-android@v3
         with:
-          packages: |
-            platform-tools
-            platforms;android-34
-            build-tools;34.0.0
+          # Action splits by spaces only; keep packages on a single line.
+          packages: 'platform-tools platforms;android-34 build-tools;34.0.0'
 
       - name: Assemble Android debug build
         run: |
