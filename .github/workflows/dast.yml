@@ -1,0 +1,110 @@
+name: DAST
+
+on:
+  schedule:
+    - cron: '0 5 * * 1'
+  workflow_dispatch:
+  pull_request:
+    branches: [main]
+
+
+jobs:
+  zap_baseline:
+    name: OWASP ZAP Baseline Scan
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write
+    env:
+      TARGET_URL: ${{ secrets.DAST_TARGET_URL }}
+      ZAP_SKIP: 'false'
+      ZAP_IMAGE: ''
+      ZAP_IMAGE_VERSION: ''
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        
+      - name: Resolve ZAP image version
+        id: zap_image
+        run: |
+          if [ ! -f ".github/docker/zap/Dockerfile" ]; then
+            echo "Missing .github/docker/zap/Dockerfile"
+            exit 1
+          fi
+          IMAGE=$(awk '$1=="FROM"{print $2; exit}' .github/docker/zap/Dockerfile)
+          if [ -z "${IMAGE}" ]; then
+            echo "Unable to parse ZAP image tag from Dockerfile"
+            exit 1
+          fi
+          VERSION=${IMAGE##*:}
+          if [ -z "${VERSION}" ] || [ "${VERSION}" = "${IMAGE}" ]; then
+            echo "Unable to determine ZAP image version"
+            exit 1
+          fi
+          echo "Using OWASP ZAP image ${IMAGE}"
+          {
+            echo "ZAP_IMAGE=${IMAGE}"
+            echo "ZAP_IMAGE_VERSION=${VERSION}"
+          } >> "$GITHUB_ENV"
+
+      - name: Ensure DAST target configured
+        run: |
+          if [ -z "${TARGET_URL}" ]; then
+            echo "DAST target URL is not configured. Set the DAST_TARGET_URL secret to enable this scan."
+            echo "ZAP_SKIP=true" >> "$GITHUB_ENV"
+          fi
+
+      - name: Verify target availability
+        if: env.ZAP_SKIP != 'true'
+        run: |
+          if ! curl -sk --max-time 10 --head "${TARGET_URL}" >/dev/null; then
+            echo "Unable to reach ${TARGET_URL}. Skipping DAST run."
+            echo "ZAP_SKIP=true" >> "$GITHUB_ENV"
+          fi
+
+      - name: Pull OWASP ZAP Docker image
+        if: env.ZAP_SKIP != 'true'
+        run: docker pull "${ZAP_IMAGE}"
+
+      - name: Run ZAP baseline scan
+        id: zap
+        if: env.ZAP_SKIP != 'true'
+        run: |
+          set -o pipefail
+          docker run --rm -t \
+            -v "$(pwd)":/zap/wrk:rw \
+            "${ZAP_IMAGE}" zap-baseline.py \
+              -t "${TARGET_URL}" \
+              -x zap-report.xml \
+              -r zap-report.html \
+              -J zap-report.json | tee zap-output.log
+          ZAP_EXIT_CODE="${PIPESTATUS[0]}"
+          echo "ZAP baseline exit code: ${ZAP_EXIT_CODE}"
+          echo "ZAP_EXIT_CODE=${ZAP_EXIT_CODE}" >> "$GITHUB_ENV"
+          exit 0
+
+      - name: Upload ZAP artifacts
+        if: always() && env.ZAP_SKIP != 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: zap-baseline-report
+          path: |
+            zap-report.xml
+            zap-report.html
+            zap-report.json
+            zap-output.log
+          if-no-files-found: warn
+
+      - name: Fail build on ZAP alerts
+        if: always() && env.ZAP_SKIP != 'true'
+        run: |
+          EXIT_CODE="${ZAP_EXIT_CODE:-0}"
+          if [ "${EXIT_CODE}" -gt 0 ]; then
+            echo "OWASP ZAP baseline exited with code ${EXIT_CODE}. Treating as failure."
+            if [ -f zap-output.log ]; then
+              echo "Relevant alerts:"
+              grep -E "WARN-NEW|FAIL-NEW" zap-output.log || true
+            fi
+            exit 1
+          fi

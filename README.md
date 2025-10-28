@@ -753,7 +753,7 @@ The `maestro_flows` CI job installs the Android debug build, boots a headless em
 
 ### Workflow Overview
 
-Seven automated GitHub Actions workflows handle code quality, security, builds, and deployments.
+Eight automated GitHub Actions workflows handle code quality, security, builds, and deployments.
 
 ### 1. Continuous Integration (`ci.yml`)
 
@@ -877,7 +877,31 @@ Without this token, the CI workflow will fail early and block all downstream job
 
 **Purpose**: Proactive security monitoring and vulnerability detection. When the Security Audit job fails, inspect the “Install dependencies” step for lockfile drift, run `bun install --frozen-lockfile && bun outdated` locally, and either refresh dependencies or document why they must remain pinned before re-running the workflow.
 
-### 6. Release Automation (`release.yml`)
+
+### 6. Dynamic Application Security Testing (`dast.yml`)
+
+**Trigger**: Weekly schedule (Mondays 5 AM UTC), pull requests targeting `main`, and manual dispatch
+
+**Jobs**:
+
+- **OWASP ZAP Baseline Scan**:
+  - Pulls the `owasp/zap2docker-stable` image
+  - Validates that the target API endpoint (`DAST_TARGET_URL` secret) is configured and reachable
+  - Runs `zap-baseline.py` against the supplied endpoint and produces HTML, XML, JSON, and log artifacts
+  - Fails the workflow when new OWASP ZAP alerts are detected (when logs contain "WARN-NEW:" or "FAIL-NEW:") so regressions surface before merge
+
+**Purpose**: Provide dynamic application security testing once externally accessible environments exist. Until an endpoint is available, set the `DAST_TARGET_URL` repository secret to point at a staging or production host; the workflow skips automatically when the secret is missing or unreachable, avoiding false failures during early development. Note that no artifacts are uploaded if the DAST_TARGET_URL secret is missing or the endpoint is unreachable.
+
+**Required Setup**:
+
+1. Choose the environment you want ZAP to target (staging or production).
+2. Navigate to GitHub → Settings → Secrets and variables → Actions.
+3. Create a repository secret named `DAST_TARGET_URL` with the fully qualified base URL (for example `https://api.calicocare.com`).
+4. Make sure the chosen endpoint allows the GitHub Actions IP ranges or proxies so the scan can connect successfully.
+5. Review uploaded artifacts (`zap-report.html`, `zap-report.xml`, `zap-report.json`) after each run to triage findings.
+6. Dependabot watches `.github/docker/zap/Dockerfile` and will file a PR when `owasp/zap2docker-stable` publishes a newer tag; merge those updates so the workflow keeps pulling patched images.
+
+### 7. Release Automation (`release.yml`)
 
 **Trigger**: Git tags matching `v*` (e.g., `v1.0.0`)
 
@@ -898,7 +922,7 @@ Without this token, the CI workflow will fail early and block all downstream job
 
 **Purpose**: Automate release process and production deployments
 
-### 7. Dependency Review (`dependency-review.yml`)
+### 8. Dependency Review (`dependency-review.yml`)
 
 **Trigger**: Pull requests
 

@@ -36,3 +36,14 @@ updates:
           - "react"
           - "@sentry/react-native"
     open-pull-requests-limit: 5
+
+  - package-ecosystem: "docker"
+    directory: "/.github/docker"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "05:00"
+      timezone: "UTC"
+    allow:
+      - dependency-name: "owasp/zap2docker-stable"
+    open-pull-requests-limit: 2
