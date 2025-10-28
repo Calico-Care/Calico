@@ -36,6 +36,7 @@ bun web          # Run on web
 - [CI/CD Pipeline](#-cicd-pipeline)
 - [Deployment](#-deployment)
 - [Environment Variables](#-environment-variables)
+- [Audit Logging](#-audit-logging)
 - [Best Practices](#-best-practices)
 - [Troubleshooting](#-troubleshooting)
 - [Resources](#-resources)
@@ -1112,6 +1113,15 @@ Located in `.github/labeler.yml`, defines auto-labels for PRs based on file patt
 - Use minimal permissions for API keys
 - Validate required variables at runtime
 - **Do not expose secrets** (DB passwords, Supabase secret key, Stytch secrets) to the client; keep them in Edge Function or EAS secrets only
+
+## 🔒 Audit Logging
+
+- **Logger facade**: `src/logging/logger.ts` exports `createLogger`, mirroring Winston’s `info / warn / error / debug / child / setLevel` API while delegating to `react-native-logs` on device and Winston during Node scripts. The helper auto-adds ISO timestamps, namespaces, and merges metadata supplied via `addMeta` or `child()`.
+- **Sentry transport**: debug/info generate breadcrumbs; warn/error map to `captureMessage`/`captureException`; audit events call `captureEvent` with tags `{ channel: 'audit', audit: 'true' }`. All payloads flow through a shared redaction routine that strips PHI/PII keys (`patient`, `phi`, `ssn`, etc.) and masks email/phone/SSN patterns before anything touches console or Sentry.
+- **Audit trail**: `logger.audit()` pushes entries into an in-memory ring buffer (`getAuditTrail()`) and flushes sanitized payloads to Sentry so compliance reports have an immutable record without leaking PHI.
+- **Size guards**: payloads above 10 KB are summarised and sliced into Sentry breadcrumbs, ensuring uploads stay within limits while preserving searchable context.
+- **Reusable tooling**: `scripts/logging-demo.ts` powers `bun run log:test` / `lint:logs` to sanity check redaction, and Jest specs live in `src/logging/__tests__` to catch regressions in the masker or Sentry routing.
+- **Runtime wiring**: `src/logging/sentry.ts` initialises the official `@sentry/react-native` SDK with Expo plugin support, HIPAA-safe defaults (`sendDefaultPii: false`), and releases tagged with the Git SHA injected via `app.config.ts` and the release workflow.
 
 ## 🎯 Best Practices
 
