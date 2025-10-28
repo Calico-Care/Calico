@@ -901,7 +901,46 @@ Without this token, the CI workflow will fail early and block all downstream job
 5. Review uploaded artifacts (`zap-report.html`, `zap-report.xml`, `zap-report.json`) after each run to triage findings.
 6. Dependabot watches `.github/docker/zap/Dockerfile` and will file a PR when `owasp/zap2docker-stable` publishes a newer tag; merge those updates so the workflow keeps pulling patched images.
 
-### 7. Release Automation (`release.yml`)
+### 7. Mobile MASVS Compliance (`masvs.yml`)
+
+- **Trigger**: Pull requests targeting `main`, pushes to `main`, weekly Monday 05:00 UTC schedule, and manual dispatch.
+- **Job**: Builds the Android release APK with Gradle, launches a pinned `opensecurity/mobile-security-framework-mobsf` container, and executes `.github/scripts/mobsf_ci.py` to enforce **OWASP MASVS-L2** controls. The raw MASVS JSON report is uploaded as an artifact for auditors; it can include package identifiers, signing metadata, and dependency fingerprints, so keep retention short and restrict access to security reviewers. Adjust retention or visibility in `.github/workflows/masvs.yml` (see the `Upload MASVS report` step) if policy changes are required.
+- **Goal**: Guarantee every build meets the Mobile Application Security Verification Standard before PHI-handling features ship.
+
+**Required Setup**:
+
+1. Generate a MobSF API key (MobSF UI → Settings → API Key) and store it as a repository secret named `MOBSF_API_KEY`.
+2. When MobSF ships a new release, update `MOBSF_IMAGE_TAG` at the top of `masvs.yml` and rerun the workflow to verify the new scanner behaves as expected.
+3. Adjust the `MASVS_LEVEL` env value if you need a different baseline (defaults to `L2` for defense-in-depth).
+4. Ensure the Android release build finishes locally (`cd android && ./gradlew assembleRelease`) before pushing large architectural changes—this mirrors what the workflow executes.
+
+**Local dry run**:
+
+```bash
+# 1. Build a release APK
+cd android
+./gradlew assembleRelease
+
+# 2. Start MobSF locally (Docker Desktop required)
+docker run -p 8000:8000 --rm -it opensecurity/mobile-security-framework-mobsf:v3.9.9
+
+# 2a. Install script dependencies (once per machine)
+python3 -m pip install --upgrade pip
+python3 -m pip install -r requirements.txt
+
+# 3. Run the CI helper script
+python3 .github/scripts/mobsf_ci.py \
+  --app android/app/build/outputs/apk/release/app-release.apk \
+  --masvs-level L2 \
+  --fail-on-violation true \
+  --mobsf-url http://127.0.0.1:8000 \
+  --api-key "<your-api-key>" \
+  --output masvs-report.json
+```
+
+The helper waits for MobSF to finish static analysis, prints a compliance summary, stores the raw report, and exits non-zero when violations remain so CI/CD stays enforceable. Attach the generated artifact to change reviews whenever MASVS remediation is required, but handle it under the same restricted retention guidelines noted above.
+
+### 8. Release Automation (`release.yml`)
 
 **Trigger**: Git tags matching `v*` (e.g., `v1.0.0`)
 
@@ -922,7 +961,7 @@ Without this token, the CI workflow will fail early and block all downstream job
 
 **Purpose**: Automate release process and production deployments
 
-### 8. Dependency Review (`dependency-review.yml`)
+### 9. Dependency Review (`dependency-review.yml`)
 
 **Trigger**: Pull requests
 

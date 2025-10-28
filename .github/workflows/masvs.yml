@@ -1,0 +1,202 @@
+name: MASVS Compliance
+
+on:
+  push:
+    branches: [main]
+  merge_group:
+  schedule:
+    - cron: '0 5 * * 1' # Weekly on Monday at 05:00 UTC
+  workflow_dispatch:
+  pull_request:
+    types: [labeled, synchronize, opened, reopened]
+    branches: [main]
+
+
+env:
+  MASVS_LEVEL: 'L2'
+  MOBSF_IMAGE: 'opensecurity/mobile-security-framework-mobsf'
+  MOBSF_IMAGE_TAG: 'v3.9.9'
+  MOBSF_URL: 'http://127.0.0.1:8000'
+
+
+jobs:
+  changes:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    outputs:
+      android: ${{ steps.filter.outputs.android }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Detect relevant changes
+        id: filter
+        uses: dorny/paths-filter@v3
+        with:
+          filters: |
+            android:
+              - 'android/**'
+              - 'app.json'
+
+  masvs:
+    needs: [changes]
+    name: MobSF MASVS Scan
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    permissions:
+      contents: read
+      actions: read
+    env:
+      MOBSF_API_KEY: ${{ secrets.MOBSF_API_KEY }}
+
+    if: >-
+      github.event_name != 'pull_request' ||
+      contains(github.event.pull_request.labels.*.name, 'security-scan') ||
+      (github.event.action == 'labeled' && github.event.label.name == 'security-scan') ||
+      (needs.changes.outputs.android == 'true')
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.1.24
+
+      - name: Install JS dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Generate Android native project
+        env:
+          CI: 'true'
+          EXPO_NO_INTERACTIVE: '1'
+          EXPO_NO_CLI_UPDATES: '1'
+        run: bunx expo prebuild --platform android
+
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+          cache: gradle
+          cache-dependency-path: android/gradle/wrapper/gradle-wrapper.properties
+
+      - name: Restore Gradle caches
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+            ${{ github.workspace }}/android/.gradle
+          key: gradle-${{ runner.os }}-${{ hashFiles('android/gradle/wrapper/gradle-wrapper.properties', 'android/app/build.gradle') }}
+          restore-keys: |
+            gradle-${{ runner.os }}-
+
+      - name: Install Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Assemble release APK
+        working-directory: android
+        env:
+          CI: 'true'
+          ORG_GRADLE_PROJECT_reactNativeArchitectures: 'armeabi-v7a,arm64-v8a'
+          SENTRY_DISABLE_AUTO_UPLOAD: 'true'
+        run: ./gradlew assembleRelease
+
+      - name: Cache MobSF data
+        uses: actions/cache@v4
+        with:
+          path: mobsf-data
+          key: mobsf-${{ env.MOBSF_IMAGE_TAG }}
+
+      - name: Prepare MobSF workspace
+        run: mkdir -p mobsf-data artifacts
+
+      - name: Validate MobSF API key
+        run: |
+          if [ -z "${MOBSF_API_KEY}" ]; then
+            if [ "${GITHUB_EVENT_NAME}" = "pull_request" ]; then
+              echo "::warning::MOBSF_API_KEY secret is not set. Using the default API key for pull_request runs only."
+            else
+              echo "::error::MOBSF_API_KEY secret is required for ${GITHUB_EVENT_NAME} events."
+              exit 1
+            fi
+          fi
+
+      - name: Start MobSF container
+        run: |
+          docker pull ${{ env.MOBSF_IMAGE }}:${{ env.MOBSF_IMAGE_TAG }}
+          docker rm -f mobsf || true
+          docker run -d \
+            --name mobsf \
+            -p 127.0.0.1:8000:8000 \
+            -e MOBSF_API_KEY="${MOBSF_API_KEY:-mobsf_default_api_key}" \
+            -v "${{ github.workspace }}/mobsf-data:/home/mobsf/.MobSF" \
+            ${{ env.MOBSF_IMAGE }}:${{ env.MOBSF_IMAGE_TAG }}
+
+      - name: Wait for MobSF readiness
+        run: |
+          BASE_URL="${{ env.MOBSF_URL }}"
+          BASE_URL="${BASE_URL%/}"
+          HEALTH_URL="${BASE_URL}/api/v1/health"
+          INFO_URL="${BASE_URL}/api/v1/info"
+          MAX_ATTEMPTS="${MOBSF_MAX_WAIT_ATTEMPTS:-120}"
+          SLEEP_SECONDS="${MOBSF_WAIT_INTERVAL_SECONDS:-5}"
+          for i in $(seq 1 "${MAX_ATTEMPTS}"); do
+            if curl -sS --fail --max-time 5 "${HEALTH_URL}" >/dev/null 2>&1; then
+              echo "MobSF health endpoint is ready."
+              exit 0
+            fi
+
+            STATUS=$(curl -sS -o /dev/null -w '%{http_code}' --max-time 5 "${BASE_URL}" || echo "000")
+            if [ "${STATUS}" != "000" ] && [ "${STATUS}" -lt 400 ]; then
+              if curl -sS --fail --max-time 5 -H "Authorization: ${MOBSF_API_KEY:-mobsf_default_api_key}" "${INFO_URL}" >/dev/null 2>&1; then
+                echo "MobSF API is responding."
+                exit 0
+              fi
+            fi
+
+            CONTAINER_STATUS=$(docker inspect -f '{{.State.Status}}' mobsf 2>/dev/null || echo "missing")
+            if [ "${CONTAINER_STATUS}" = "exited" ] || [ "${CONTAINER_STATUS}" = "dead" ]; then
+              echo "::error::MobSF container stopped unexpectedly (status: ${CONTAINER_STATUS})."
+              docker logs mobsf || true
+              exit 1
+            fi
+
+            echo "Waiting for MobSF to start..."
+            sleep "${SLEEP_SECONDS}"
+          done
+          echo "MobSF did not become ready in time."
+          echo "Last 100 lines of MobSF logs:"
+          docker logs --tail 100 --timestamps mobsf || true
+          exit 1
+
+      - name: Install Python dependencies
+        run: |
+          python3 -m pip install --upgrade pip
+          python3 -m pip install -r requirements.txt
+
+      - name: MASVS Compliance Check
+        env:
+          MOBSF_URL: ${{ env.MOBSF_URL }}
+        run: |
+          python3 .github/scripts/mobsf_ci.py \
+            --app android/app/build/outputs/apk/release/app-release.apk \
+            --masvs-level "${MASVS_LEVEL}" \
+            --fail-on-violation true \
+            --output artifacts/masvs-report.json
+
+      - name: Upload MASVS report
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: masvs-report
+          path: artifacts/masvs-report.json
+          retention-days: 14
+
+      - name: Stop MobSF container
+        if: always()
+        run: docker rm -f mobsf || true
