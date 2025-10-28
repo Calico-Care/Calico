@@ -1,6 +1,5 @@
 import { useHeaderHeight } from '@react-navigation/elements';
 import { useNavigation } from '@react-navigation/native';
-import * as Sentry from '@sentry/react-native';
 import { FlashList } from '@shopify/flash-list';
 import * as Haptics from 'expo-haptics';
 import { cssInterop } from 'nativewind';
@@ -16,6 +15,7 @@ import { Icon } from '@/components/nativewindui/Icon';
 import { Text } from '@/components/nativewindui/Text';
 
 import { useColorScheme } from '@/lib/useColorScheme';
+import { Sentry } from '@/src/logging/sentry';
 
 cssInterop(FlashList, {
   className: 'style',

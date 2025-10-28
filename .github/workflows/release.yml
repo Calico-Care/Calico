@@ -66,7 +66,13 @@ jobs:
     name: Publish EAS Update (Production)
     needs: create-release
     runs-on: ubuntu-latest
-    
+    env:
+      SENTRY_ORG: ${{ secrets.SENTRY_ORG || 'calico-care' }}
+      SENTRY_PROJECT: ${{ secrets.SENTRY_PROJECT || 'calico-native' }}
+      SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
+      EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+      RELEASE_SHA: ${{ github.sha }}
+
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -81,14 +87,22 @@ jobs:
         with:
           expo-version: latest
           eas-version: latest
-          token: ${{ secrets.EXPO_TOKEN }}
+          token: ${{ env.EXPO_TOKEN }}
 
       - name: Install dependencies
         run: bun install --frozen-lockfile
+
+      - name: Export release metadata
+        run: |
+          echo "EXPO_PUBLIC_ENV=production" >> $GITHUB_ENV
+          echo "EXPO_PUBLIC_RELEASE_SHA=${RELEASE_SHA}" >> $GITHUB_ENV
+
+      - name: Trigger production EAS build
+        run: |
+          eas build --profile production --platform all --non-interactive --no-wait
 
       - name: Publish to production
         run: |
           eas update --branch production \
             --message "Release ${{ github.ref_name }}" \
             --non-interactive
-
