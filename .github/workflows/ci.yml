@@ -5,6 +5,8 @@ on:
     branches: [main, develop]
   pull_request:
     branches: [main, develop]
+  schedule:
+    - cron: '0 5 * * 1'
 
 
 permissions:
@@ -53,6 +55,114 @@ jobs:
               - '.maestro/**'
             supabase:
               - 'supabase/**'
+
+  android_build:
+    name: Android Build
+    runs-on: ubuntu-latest
+    needs:
+      - optimize_ci
+    if: >
+      needs.optimize_ci.result != 'failure' &&
+      needs.optimize_ci.outputs.skip == 'false' &&
+      (
+        (github.event_name == 'push' && github.ref == 'refs/heads/main') ||
+        github.event_name == 'schedule'
+      )
+    env:
+      EXPO_NO_TELEMETRY: '1'
+      EXPO_NO_CLI_UPDATES: '1'
+      EXPO_NO_INTERACTIVE: '1'
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.1.24
+
+      - name: Restore Bun cache
+        id: bun-cache
+        uses: actions/cache/restore@v4
+        with:
+          path: |
+            ~/.bun/install/cache
+            node_modules
+          key: ${{ runner.os }}-bun-${{ github.job }}-${{ hashFiles('bun.lock', 'package.json') }}
+          restore-keys: |
+            ${{ runner.os }}-bun-${{ github.job }}-
+
+      - name: Install dependencies
+        if: steps.bun-cache.outputs.cache-hit != 'true'
+        run: bun install --frozen-lockfile
+
+      - name: Save Bun cache
+        if: steps.bun-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: |
+            ~/.bun/install/cache
+            node_modules
+          key: ${{ runner.os }}-bun-${{ github.job }}-${{ hashFiles('bun.lock', 'package.json') }}
+
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Restore Android SDK cache
+        id: android-cache
+        uses: actions/cache/restore@v4
+        with:
+          path: |
+            ~/.android
+            ~/.gradle
+            /usr/local/lib/android/sdk
+          key: ${{ runner.os }}-android-sdk-${{ hashFiles('**/build.gradle', '**/gradle-wrapper.properties') }}
+          restore-keys: |
+            ${{ runner.os }}-android-sdk-
+
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
+        with:
+          packages: platform-tools platforms;android-34 build-tools;34.0.0
+
+      - name: Generate native project
+        run: bunx expo prebuild --platform android --non-interactive --no-install
+
+      - name: Assemble Android APKs
+        env:
+          ORG_GRADLE_PROJECT_reactNativeArchitectures: 'armeabi-v7a,arm64-v8a'
+        run: |
+          cd android
+          ./gradlew assembleDebug assembleRelease
+
+      - name: Save Android SDK cache
+        if: steps.android-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: |
+            ~/.android
+            ~/.gradle
+            /usr/local/lib/android/sdk
+          key: ${{ runner.os }}-android-sdk-${{ hashFiles('**/build.gradle', '**/gradle-wrapper.properties') }}
+
+      - name: Upload debug APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: android-debug-apk
+          path: android/app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error
+          retention-days: 7
+
+      - name: Upload release APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: android-release-apk
+          path: android/app/build/outputs/apk/release/app-release.apk
+          if-no-files-found: error
+          retention-days: 7
 
   lint:
     name: Lint & Type Check
@@ -198,76 +308,24 @@ jobs:
     name: Maestro Flows
     runs-on: ubuntu-latest
     needs:
-      - optimize_ci
       - detect_changes
+      - android_build
     if: >
-      needs.optimize_ci.result != 'failure' &&
-      needs.optimize_ci.outputs.skip == 'false' &&
-      github.event_name == 'pull_request' &&
-      needs.detect_changes.outputs.ui == 'true'
+      needs.android_build.result != 'failure' &&
+      needs.detect_changes.result != 'failure' &&
+      (
+        (github.event_name == 'push' && github.ref == 'refs/heads/main' && needs.detect_changes.outputs.ui == 'true') ||
+        github.event_name == 'schedule'
+      )
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Setup Bun
-        uses: oven-sh/setup-bun@v2
+      - name: Download debug APK
+        uses: actions/download-artifact@v4
         with:
-          bun-version: 1.1.24
-
-      - name: Restore Bun cache
-        id: bun-cache
-        uses: actions/cache/restore@v4
-        with:
-          path: |
-            ~/.bun/install/cache
-            node_modules
-          key: ${{ runner.os }}-bun-${{ github.job }}-${{ hashFiles('bun.lock', 'package.json') }}
-          restore-keys: |
-            ${{ runner.os }}-bun-${{ github.job }}-
-
-      - name: Install dependencies
-        if: steps.bun-cache.outputs.cache-hit != 'true'
-        run: bun install --frozen-lockfile
-
-      - name: Save Bun cache
-        if: steps.bun-cache.outputs.cache-hit != 'true'
-        uses: actions/cache/save@v4
-        with:
-          path: |
-            ~/.bun/install/cache
-            node_modules
-          key: ${{ runner.os }}-bun-${{ github.job }}-${{ hashFiles('bun.lock', 'package.json') }}
-
-      - name: Setup Java
-        uses: actions/setup-java@v4
-        with:
-          distribution: temurin
-          java-version: '17'
-
-      - name: Restore Android SDK cache
-        id: android-cache
-        uses: actions/cache/restore@v4
-        with:
-          path: |
-            ~/.android
-            ~/.gradle
-            /usr/local/lib/android/sdk
-          key: ${{ runner.os }}-android-sdk-${{ hashFiles('**/build.gradle', '**/gradle-wrapper.properties') }}
-          restore-keys: |
-            ${{ runner.os }}-android-sdk-
-
-      - name: Setup Android SDK
-        uses: android-actions/setup-android@v3
-        with:
-          packages: |
-            platform-tools
-            platforms;android-34
-            build-tools;34.0.0
-
-      - name: Assemble Android debug build
-        run: |
-          cd android
-          ./gradlew assembleDebug
+          name: android-debug-apk
+          path: android-debug-apk
 
       - name: Cache Maestro
         uses: actions/cache@v4
@@ -279,16 +337,20 @@ jobs:
         uses: reactivecircus/android-emulator-runner@v2
         with:
           api-level: 34
-          arch: x86_64
+          arch: arm64-v8a
           target: google_apis
+          profile: pixel_6
+          emulator-options: -no-window -gpu swiftshader_indirect -no-boot-anim -camera-back none -camera-front none
+          disable-animations: true
           script: |
             if [ ! -f "$HOME/.maestro/bin/maestro" ]; then
               curl -Ls "https://get.maestro.mobile.dev" | bash
             fi
             export PATH="$HOME/.maestro/bin:$PATH"
             maestro --version
-            adb install -r android/app/build/outputs/apk/debug/app-debug.apk
+            adb install -r android-debug-apk/app-debug.apk
             maestro test .maestro/flows --format junit --output /tmp/maestro-report.xml
+
       - name: Upload Maestro report
         if: always()
         uses: actions/upload-artifact@v4
@@ -305,15 +367,111 @@ jobs:
           path: ~/.maestro
           if-no-files-found: ignore
 
-      - name: Save Android SDK cache
-        if: steps.android-cache.outputs.cache-hit != 'true'
-        uses: actions/cache/save@v4
+  masvs_scan:
+    name: MobSF MASVS Scan
+    runs-on: ubuntu-latest
+    needs:
+      - android_build
+    if: >
+      needs.android_build.result != 'failure' &&
+      (
+        (github.event_name == 'push' && github.ref == 'refs/heads/main') ||
+        github.event_name == 'schedule'
+      )
+    env:
+      MASVS_LEVEL: 'L2'
+      MOBSF_IMAGE: 'opensecurity/mobile-security-framework-mobsf'
+      MOBSF_IMAGE_TAG: 'v3.9.9'
+      MOBSF_URL: 'http://127.0.0.1:8000'
+      MOBSF_API_KEY: ${{ secrets.MOBSF_API_KEY }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Download release APK
+        uses: actions/download-artifact@v4
         with:
-          path: |
-            ~/.android
-            ~/.gradle
-            /usr/local/lib/android/sdk
-          key: ${{ runner.os }}-android-sdk-${{ hashFiles('**/build.gradle', '**/gradle-wrapper.properties') }}
+          name: android-release-apk
+          path: android-release-apk
+
+      - name: Prepare MobSF workspace
+        run: mkdir -p mobsf-data artifacts
+
+      - name: Validate MobSF API key
+        run: |
+          if [ -z "${MOBSF_API_KEY}" ]; then
+            echo "::error::MOBSF_API_KEY secret is required for this workflow."
+            exit 1
+          fi
+
+      - name: Start MobSF container
+        run: |
+          docker pull ${{ env.MOBSF_IMAGE }}:${{ env.MOBSF_IMAGE_TAG }}
+          docker rm -f mobsf || true
+          docker run -d \
+            --name mobsf \
+            -p 127.0.0.1:8000:8000 \
+            -e MOBSF_API_KEY="${MOBSF_API_KEY}" \
+            -v "${{ github.workspace }}/mobsf-data:/home/mobsf/.MobSF" \
+            ${{ env.MOBSF_IMAGE }}:${{ env.MOBSF_IMAGE_TAG }}
+
+      - name: Wait for MobSF readiness
+        run: |
+          BASE_URL="${MOBSF_URL%/}"
+          HEALTH_URL="${BASE_URL}/api/v1/health"
+          INFO_URL="${BASE_URL}/api/v1/info"
+          MAX_ATTEMPTS=120
+          SLEEP_SECONDS=5
+          for i in $(seq 1 "${MAX_ATTEMPTS}"); do
+            if curl -sS --fail --max-time 5 "${HEALTH_URL}" >/dev/null 2>&1; then
+              echo "MobSF health endpoint ready."
+              exit 0
+            fi
+            STATUS=$(curl -sS -o /dev/null -w '%{http_code}' --max-time 5 "${BASE_URL}" || echo "000")
+            if [ "${STATUS}" != "000" ] && [ "${STATUS}" -lt 400 ]; then
+              if curl -sS --fail --max-time 5 -H "Authorization: ${MOBSF_API_KEY}" "${INFO_URL}" >/dev/null 2>&1; then
+                echo "MobSF API responding."
+                exit 0
+              fi
+            fi
+            CONTAINER_STATUS=$(docker inspect -f '{{.State.Status}}' mobsf 2>/dev/null || echo "missing")
+            if [ "${CONTAINER_STATUS}" = "exited" ] || [ "${CONTAINER_STATUS}" = "dead" ]; then
+              echo "::error::MobSF container stopped unexpectedly (${CONTAINER_STATUS})."
+              docker logs mobsf || true
+              exit 1
+            fi
+            sleep "${SLEEP_SECONDS}"
+          done
+          echo "::error::MobSF did not become ready in time."
+          docker logs --tail 100 --timestamps mobsf || true
+          exit 1
+
+      - name: Install Python dependencies
+        run: |
+          python3 -m pip install --upgrade pip
+          python3 -m pip install -r requirements.txt
+
+      - name: MASVS Compliance Check
+        env:
+          MOBSF_URL: ${{ env.MOBSF_URL }}
+        run: |
+          python3 .github/scripts/mobsf_ci.py \
+            --app android-release-apk/app-release.apk \
+            --masvs-level "${MASVS_LEVEL}" \
+            --fail-on-violation true \
+            --output artifacts/masvs-report.json
+
+      - name: Upload MASVS report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: masvs-report
+          path: artifacts/masvs-report.json
+          retention-days: 14
+
+      - name: Stop MobSF container
+        if: always()
+        run: docker rm -f mobsf || true
 
   supabase_guardrails:
     name: Supabase Guardrails

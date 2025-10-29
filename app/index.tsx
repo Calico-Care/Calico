@@ -1,6 +1,5 @@
 import { useHeaderHeight } from '@react-navigation/elements';
 import { useNavigation } from '@react-navigation/native';
-import * as Sentry from '@sentry/react-native';
 import { FlashList } from '@shopify/flash-list';
 import * as Haptics from 'expo-haptics';
 import { cssInterop } from 'nativewind';
@@ -15,6 +14,7 @@ import { Icon } from '@/components/nativewindui/Icon';
 
 import { Text } from '@/components/nativewindui/Text';
 
+import { appLogger, auditController, auditLogger } from '@/lib/logger';
 import { useColorScheme } from '@/lib/useColorScheme';
 
 cssInterop(FlashList, {
@@ -134,7 +134,17 @@ const COMPONENTS: ComponentItem[] = [
     component: function SentryTestButton() {
       function onPress() {
         Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-        Sentry.captureException(new Error('First error'));
+        const error = new Error('Intentional logger-triggered error');
+        appLogger.error('Audit trail smoke test', {
+          category: 'diagnostics.logger',
+          error,
+          action: 'sentry-test',
+        });
+        auditLogger.info('Audit breadcrumb recorded', {
+          category: 'audit.diagnostics',
+          action: 'sentry-test',
+        });
+        auditController.flush();
       }
       return (
         <View className="items-center justify-center gap-4 p-4">

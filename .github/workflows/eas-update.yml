@@ -21,6 +21,14 @@ jobs:
   update:
     name: Publish EAS Update
     runs-on: ubuntu-latest
+    env:
+      EXPO_PUBLIC_SENTRY_DSN: ${{ secrets.EXPO_PUBLIC_SENTRY_DSN }}
+      SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
+      SENTRY_ORG: ${{ vars.SENTRY_ORG }}
+      SENTRY_PROJECT: ${{ vars.SENTRY_PROJECT }}
+      SENTRY_URL: ${{ vars.SENTRY_URL || 'https://sentry.io/' }}
+      SENTRY_RELEASE: calico@${{ github.sha }}
+      SENTRY_DIST: ${{ github.sha }}
     
     steps:
       - name: Checkout code
@@ -60,4 +68,3 @@ jobs:
               commit_sha: context.sha,
               body: `🚀 EAS Update published to **${branch}**\n\n${message}`
             });
-

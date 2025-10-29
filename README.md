@@ -1103,6 +1103,7 @@ Located in `.github/labeler.yml`, defines auto-labels for PRs based on file patt
 2. Command: `eas secret:create --scope project --name <NAME> --value <VALUE>`
 3. Secrets automatically injected during builds
 4. No commit to Git required
+5. Set `EXPO_PUBLIC_SENTRY_DSN`, `SENTRY_AUTH_TOKEN`, and (optionally) `SENTRY_ENVIRONMENT` as project secrets so the Sentry Expo plugin can publish releases with the correct Git SHA
 
 ### Security Best Practices
 
@@ -1158,6 +1159,13 @@ Located in `.github/labeler.yml`, defines auto-labels for PRs based on file patt
 - **Use** strict types, avoid `any`
 - **Write** descriptive variable and function names
 - **Comment** complex logic, not obvious code
+
+### Logging & Audit Trail
+
+- Use `appLogger` (`@/lib/logger`) for runtime logging (`debug`, `info`, `warn`, `error`) so entries reach Sentry and console as structured JSON
+- Reserve `auditLogger` for compliance events; logs are buffered in-memory and flushed via `auditController.flush()` with an `audit` Sentry tag
+- Attach metadata via the second argument (e.g., `appLogger.warn('Slow response', { category: 'supabase', durationMs })`) and avoid placing PHI in messages
+- Log exceptions by passing the `error` field: `appLogger.error('Sync failed', { category: 'terra.webhook', error })`
 - **Keep** functions small and focused
 
 ### Testing

@@ -26,6 +26,14 @@ jobs:
   build:
     name: Build on EAS
     runs-on: ubuntu-latest
+    env:
+      EXPO_PUBLIC_SENTRY_DSN: ${{ secrets.EXPO_PUBLIC_SENTRY_DSN }}
+      SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
+      SENTRY_ORG: ${{ vars.SENTRY_ORG }}
+      SENTRY_PROJECT: ${{ vars.SENTRY_PROJECT }}
+      SENTRY_URL: ${{ vars.SENTRY_URL || 'https://sentry.io/' }}
+      SENTRY_RELEASE: calico@${{ github.sha }}
+      SENTRY_DIST: ${{ github.sha }}
     
     steps:
       - name: Checkout code
@@ -53,4 +61,3 @@ jobs:
           else
             eas build --platform ${{ github.event.inputs.platform }} --profile ${{ github.event.inputs.profile }} --non-interactive
           fi
-

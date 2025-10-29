@@ -6,64 +6,73 @@ import * as Sentry from '@sentry/react-native';
 import * as Device from 'expo-device';
 import { Link, Stack } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
-import { Platform, Pressable } from 'react-native';
+import { useEffect } from 'react';
+import { AppState, Platform, Pressable } from 'react-native';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { Icon } from '@/components/nativewindui/Icon';
 import { ThemeToggle } from '@/components/nativewindui/ThemeToggle';
+import { env } from '@/config/env';
 import { cn } from '@/lib/cn';
+import { auditController } from '@/lib/logger';
+import { redactFields } from '@/lib/logger/redact';
 import { useColorScheme } from '@/lib/useColorScheme';
 import { QueryProvider } from '@/providers/QueryProvider';
 import { NAV_THEME } from '@/theme';
 
+function scrubValue(value: unknown): unknown {
+  if (!value || typeof value !== 'object') {
+    return value;
+  }
+
+  if (Array.isArray(value)) {
+    return value.map((entry) => scrubValue(entry));
+  }
+
+  return redactFields(value as Record<string, unknown>);
+}
+
 Sentry.init({
-  dsn: 'https://e6b1ecb60dc09016b1b2c9991c40b916@o4510205406281728.ingest.us.sentry.io/4510205414604800',
-
-  // HIPAA Compliance: Disable PII tracking
-  // Do NOT send IP addresses, cookies, user info, or other PII
+  dsn: env.sentryDsn,
   sendDefaultPii: false,
-
-  // Enable Logs (sanitize logs to avoid PHI)
-  enableLogs: true,
-
-  // HIPAA Compliance: Disable Session Replay
-  // Session replay can capture sensitive health information
+  debug: __DEV__,
+  integrations: [Sentry.feedbackIntegration()],
+  enableAutoSessionTracking: true,
+  tracesSampleRate: 0,
   replaysSessionSampleRate: 0,
   replaysOnErrorSampleRate: 0,
-
-  // HIPAA Compliance: Only include feedback integration (no replay)
-  integrations: [Sentry.feedbackIntegration()],
-
-  // Scrub sensitive data from breadcrumbs and events
   beforeSend(event) {
-    // Remove user data if accidentally included
-    if (event.user) {
-      delete event.user.email;
-      delete event.user.username;
-      delete event.user.ip_address;
-    }
-    // Remove request data that might contain PHI
     if (event.request) {
       delete event.request.cookies;
       delete event.request.headers;
     }
+
+    if (event.user) {
+      event.user = undefined;
+    }
+
+    if (event.contexts) {
+      Object.entries(event.contexts).forEach(([key, contextValue]) => {
+        event.contexts![key] = scrubValue(contextValue) as Record<string, unknown>;
+      });
+    }
+
+    if (event.extra && typeof event.extra === 'object') {
+      event.extra = scrubValue(event.extra) as Record<string, unknown>;
+    }
+
     return event;
   },
-
   beforeBreadcrumb(breadcrumb) {
-    // Remove sensitive data from breadcrumbs
     if (breadcrumb.category === 'console') {
-      return null; // Drop console breadcrumbs (might contain PHI)
+      return null;
     }
-    if (breadcrumb.data) {
-      // Scrub any data that might be sensitive
-      delete breadcrumb.data.url;
-      delete breadcrumb.data.data;
+
+    if (breadcrumb.data && typeof breadcrumb.data === 'object') {
+      breadcrumb.data = scrubValue(breadcrumb.data) as NonNullable<typeof breadcrumb.data>;
     }
+
     return breadcrumb;
   },
-
-  // uncomment the line below to enable Spotlight (https://spotlightjs.com)
-  // spotlight: __DEV__,
 });
 
 export {
@@ -75,6 +84,18 @@ const isIos26 = Platform.select({ default: false, ios: Device.osVersion?.startsW
 
 export default Sentry.wrap(function RootLayout() {
   const { colorScheme, isDarkColorScheme } = useColorScheme();
+
+  useEffect(() => {
+    const subscription = AppState.addEventListener('change', (state) => {
+      if (state !== 'active') {
+        auditController.flush();
+      }
+    });
+
+    return () => {
+      subscription.remove();
+    };
+  }, []);
 
   return (
     <>

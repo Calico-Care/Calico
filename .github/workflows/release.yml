@@ -66,6 +66,14 @@ jobs:
     name: Publish EAS Update (Production)
     needs: create-release
     runs-on: ubuntu-latest
+    env:
+      EXPO_PUBLIC_SENTRY_DSN: ${{ secrets.EXPO_PUBLIC_SENTRY_DSN }}
+      SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
+      SENTRY_ORG: ${{ vars.SENTRY_ORG }}
+      SENTRY_PROJECT: ${{ vars.SENTRY_PROJECT }}
+      SENTRY_URL: ${{ vars.SENTRY_URL || 'https://sentry.io/' }}
+      SENTRY_RELEASE: ${{ vars.SENTRY_APP_NAME || 'calico' }}@${{ github.sha }}
+      SENTRY_DIST: ${{ github.sha }}
     
     steps:
       - name: Checkout code
@@ -91,4 +99,3 @@ jobs:
           eas update --branch production \
             --message "Release ${{ github.ref_name }}" \
             --non-interactive
-
