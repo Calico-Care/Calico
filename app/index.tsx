@@ -1,231 +1,179 @@
-import { useHeaderHeight } from '@react-navigation/elements';
-import { useNavigation } from '@react-navigation/native';
-import { FlashList } from '@shopify/flash-list';
-import * as Haptics from 'expo-haptics';
-import { cssInterop } from 'nativewind';
-import * as React from 'react';
-import { Linking, useWindowDimensions, View } from 'react-native';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { SearchBarProps } from 'react-native-screens';
+import { useRouter } from 'expo-router';
+import { useState } from 'react';
+import {
+  ActivityIndicator,
+  KeyboardAvoidingView,
+  Platform,
+  ScrollView,
+  TextInput,
+  View,
+} from 'react-native';
 
 import { Button } from '@/components/nativewindui/Button';
-
 import { Icon } from '@/components/nativewindui/Icon';
-
+import type { MaterialCommunityIconName } from '@/components/nativewindui/Icon/types';
 import { Text } from '@/components/nativewindui/Text';
-
-import { appLogger, auditController, auditLogger } from '@/lib/logger';
+import { cn } from '@/lib/cn';
 import { useColorScheme } from '@/lib/useColorScheme';
 
-cssInterop(FlashList, {
-  className: 'style',
-  contentContainerClassName: 'contentContainerStyle',
-});
+const MOCK_EMAIL = 'clinician@calico.health';
 
-export default function Screen() {
-  const searchValue = useHeaderSearchBar({ hideWhenScrolling: COMPONENTS.length === 0 });
+type Highlight = { icon: MaterialCommunityIconName; copy: string };
 
-  const data = searchValue
-    ? COMPONENTS.filter((c) => c.name.toLowerCase().includes(searchValue.toLowerCase()))
-    : COMPONENTS;
-
-  return (
-    <FlashList
-      contentInsetAdjustmentBehavior="automatic"
-      keyboardShouldPersistTaps="handled"
-      data={data}
-      contentContainerClassName="py-4 android:pb-12"
-      extraData={searchValue}
-      removeClippedSubviews={false} // used for slecting text on android
-      keyExtractor={keyExtractor}
-      ItemSeparatorComponent={renderItemSeparator}
-      renderItem={renderItem}
-      ListEmptyComponent={COMPONENTS.length === 0 ? ListEmptyComponent : undefined}
-    />
-  );
-}
-
-function useHeaderSearchBar(props: SearchBarProps = {}) {
-  const { colors } = useColorScheme();
-  const navigation = useNavigation();
-  const [search, setSearch] = React.useState('');
-
-  React.useLayoutEffect(() => {
-    navigation.setOptions({
-      headerSearchBarOptions: {
-        placeholder: 'Search...',
-        textColor: colors.foreground,
-        tintColor: colors.primary,
-        headerIconColor: colors.foreground,
-        hintTextColor: colors.grey,
-        hideWhenScrolling: false,
-        onChangeText(ev) {
-          setSearch(ev.nativeEvent.text);
-        },
-        ...props,
-      } satisfies SearchBarProps,
-    });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [navigation, colors.foreground, colors.grey, colors.primary, props]);
-
-  return search;
-}
-
-function ListEmptyComponent() {
-  const insets = useSafeAreaInsets();
-  const dimensions = useWindowDimensions();
-  const headerHeight = useHeaderHeight();
-  const { colors } = useColorScheme();
-  const height = dimensions.height - headerHeight - insets.bottom - insets.top;
-
-  return (
-    <View style={{ height }} className="flex-1 items-center justify-center gap-1 px-12">
-      <Icon name="doc.badge.plus" size={42} color={colors.grey} />
-      <Text variant="title3" className="pb-1 text-center font-semibold">
-        No Components Installed
-      </Text>
-      <Text color="tertiary" variant="subhead" className="pb-4 text-center">
-        You can install any of the free components from the{' '}
-        <Text
-          onPress={() => Linking.openURL('https://nativewindui.com')}
-          variant="subhead"
-          className="text-primary"
-        >
-          NativewindUI
-        </Text>
-        {' website.'}
-      </Text>
-    </View>
-  );
-}
-
-type ComponentItem = { name: string; component: React.FC };
-
-function keyExtractor(item: ComponentItem) {
-  return item.name;
-}
-
-function renderItemSeparator() {
-  return <View className="p-2" />;
-}
-
-function renderItem({ item }: { item: ComponentItem }) {
-  return (
-    <Card title={item.name}>
-      <item.component />
-    </Card>
-  );
-}
-
-function Card({ children, title }: { children: React.ReactNode; title: string }) {
-  return (
-    <View className="px-4">
-      <View className="gap-4 rounded-xl border border-border bg-card p-4 pb-6 shadow-sm shadow-black/10 dark:shadow-none">
-        <Text className="text-center text-sm font-medium tracking-wider opacity-60">{title}</Text>
-        {children}
-      </View>
-    </View>
-  );
-}
-
-const COMPONENTS: ComponentItem[] = [
+const WEB_HIGHLIGHTS: Highlight[] = [
   {
-    name: 'Sentry Test',
-    component: function SentryTestButton() {
-      function onPress() {
-        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-        const error = new Error('Intentional logger-triggered error');
-        appLogger.error('Audit trail smoke test', {
-          category: 'diagnostics.logger',
-          error,
-          action: 'sentry-test',
-        });
-        auditLogger.info('Audit breadcrumb recorded', {
-          category: 'audit.diagnostics',
-          action: 'sentry-test',
-        });
-        auditController.flush();
-      }
-      return (
-        <View className="items-center justify-center gap-4 p-4">
-          <Button onPress={onPress}>
-            <Text>Try!</Text>
-          </Button>
-          <Text variant="footnote" color="tertiary" className="text-center">
-            Tap to send a test error to Sentry
-          </Text>
-        </View>
-      );
-    },
+    icon: 'shield-check',
+    copy: 'HIPAA-ready workspace with automatic audit logging and redaction.',
   },
-  // {
-  //   name: 'Button',
-  //   component: function ButtonExample() {
-  //     function onPress() {
-  //       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-  //     }
-  //     return (
-  //       <View className="items-center justify-center gap-4 p-4">
-  //         <Button onPress={onPress}>
-  //           <Icon name="play.fill" className="ios:size-4 text-white" />
-  //           <Text>Primary</Text>
-  //         </Button>
-  //         <Button onPress={onPress} variant="secondary">
-  //           <Text>Secondary</Text>
-  //         </Button>
-  //         <Button onPress={onPress} variant="tonal">
-  //           <Text>Tonal</Text>
-  //         </Button>
-  //         <Button onPress={onPress} variant="plain">
-  //           <Text>Plain</Text>
-  //         </Button>
-  //         <Button onPress={onPress} variant="tonal" size="icon">
-  //           <Icon name="heart.fill" className="ios:text-primary size-5 text-foreground" />
-  //         </Button>
-  //       </View>
-  //     );
-  //   },
-  // },
-  //   {
-  //    name: 'Text',
-  //     component: function TextExample() {
-  //       return (
-  //        <View className="gap-2">
-  //          <Text variant="largeTitle" className="text-center">
-  //            Large Title
-  //          </Text>
-  //          <Text variant="title1" className="text-center">
-  //            Title 1
-  //          </Text>
-  //          <Text variant="title2" className="text-center">
-  //            Title 2
-  //          </Text>
-  //          <Text variant="title3" className="text-center">
-  //            Title 3
-  //          </Text>
-  //          <Text variant="heading" className="text-center">
-  //            Heading
-  //          </Text>
-  //          <Text variant="body" className="text-center">
-  //            Body
-  //          </Text>
-  //          <Text variant="callout" className="text-center">
-  //            Callout
-  //          </Text>
-  //          <Text variant="subhead" className="text-center">
-  //            Subhead
-  //          </Text>
-  //          <Text variant="footnote" className="text-center">
-  //            Footnote
-  //          </Text>
-  //          <Text variant="caption1" className="text-center">
-  //            Caption 1
-  //          </Text>
-  //          <Text variant="caption2" className="text-center">
-  //            Caption 2
-  //          </Text>
-  //         </View>
-  //       );
-  //     },
-  //   },
+  {
+    icon: 'heart-pulse',
+    copy: 'BodyTrace + Terra telemetry blended into a single trend stream.',
+  },
+  {
+    icon: 'account-group',
+    copy: 'Role-based access for clinicians, caregivers, and family members.',
+  },
 ];
+
+export default function LoginScreen() {
+  const router = useRouter();
+  const { colors } = useColorScheme();
+  const [email, setEmail] = useState(MOCK_EMAIL);
+  const [accessCode, setAccessCode] = useState('triage-demo');
+  const [submitting, setSubmitting] = useState(false);
+  const isWeb = Platform.OS === 'web';
+  const scrollStyle = isWeb ? { backgroundColor: '#f6f8ff' } : undefined;
+
+  function handleLogin() {
+    if (submitting) {
+      return;
+    }
+    setSubmitting(true);
+    setTimeout(() => {
+      setSubmitting(false);
+      router.push('/role-selection');
+    }, 650);
+  }
+
+  return (
+    <KeyboardAvoidingView
+      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+      className={cn('flex-1 bg-background', isWeb && 'bg-transparent')}
+    >
+      <ScrollView
+        contentInsetAdjustmentBehavior="automatic"
+        keyboardShouldPersistTaps="handled"
+        contentContainerStyle={{ flexGrow: 1 }}
+        className="flex-1"
+        style={scrollStyle}
+      >
+        <View className={cn('flex-1 items-center justify-center px-6 py-10', isWeb && 'py-20')}>
+          <View
+            className={cn(
+              'w-full max-w-md gap-8',
+              isWeb && 'max-w-5xl web:flex-row web:items-start web:justify-between web:gap-16'
+            )}
+          >
+            <View className={cn('gap-3', isWeb && 'web:flex-1 web:max-w-lg web:gap-5')}>
+              <Text
+                variant="largeTitle"
+                className={cn(
+                  'font-semibold text-foreground',
+                  isWeb && 'text-5xl leading-tight tracking-tight'
+                )}
+              >
+                Welcome back to Calico Care.
+              </Text>
+              <Text variant="body" color="tertiary" className={cn('leading-6', isWeb && 'text-lg')}>
+                Review real-time telemetry, triage escalations from VAPI, and keep every patient on
+                track with BodyTrace-connected care plans.
+              </Text>
+              {isWeb && (
+                <View className="gap-3 pt-4">
+                  {WEB_HIGHLIGHTS.map((item) => (
+                    <View
+                      key={item.copy}
+                      className="flex-row items-center gap-3 rounded-2xl border border-white/70 bg-white/70 px-4 py-3 shadow-sm shadow-black/10 backdrop-blur-sm"
+                    >
+                      <View className="rounded-full bg-primary/10 p-2.5">
+                        <Icon
+                          materialCommunityIcon={{ name: item.icon }}
+                          className="text-primary"
+                          size={20}
+                        />
+                      </View>
+                      <Text variant="body" className="flex-1 text-foreground">
+                        {item.copy}
+                      </Text>
+                    </View>
+                  ))}
+                </View>
+              )}
+            </View>
+            <View
+              className={cn(
+                'gap-4 rounded-2xl border border-border bg-card/90 p-6 shadow-sm shadow-black/5 dark:border-border/60 dark:bg-card',
+                isWeb &&
+                  'web:flex-1 web:max-w-md web:rounded-3xl web:border-white/70 web:bg-white/95 web:px-8 web:py-8 web:shadow-xl web:shadow-primary/5 web:backdrop-blur-lg'
+              )}
+            >
+              <View className="gap-2">
+                <Text variant="subhead" className="text-foreground">
+                  Organization email
+                </Text>
+                <TextInput
+                  autoCapitalize="none"
+                  autoComplete="email"
+                  keyboardType="email-address"
+                  placeholder="you@organization.com"
+                  placeholderTextColor="rgba(142,142,147,0.7)"
+                  value={email}
+                  onChangeText={setEmail}
+                  className={cn(
+                    'w-full rounded-xl border border-border/80 bg-background px-4 py-[14px] text-base text-foreground',
+                    isWeb && 'web:border-white/70 web:bg-white'
+                  )}
+                />
+              </View>
+              <View className="gap-2">
+                <Text variant="subhead" className="text-foreground">
+                  Access code
+                </Text>
+                <TextInput
+                  autoCapitalize="none"
+                  secureTextEntry
+                  placeholder="Enter secure access code"
+                  placeholderTextColor="rgba(142,142,147,0.7)"
+                  value={accessCode}
+                  onChangeText={setAccessCode}
+                  className={cn(
+                    'w-full rounded-xl border border-border/80 bg-background px-4 py-[14px] text-base text-foreground',
+                    isWeb && 'web:border-white/70 web:bg-white'
+                  )}
+                />
+              </View>
+              <Button
+                onPress={handleLogin}
+                disabled={submitting}
+                className={cn('mt-2', isWeb && 'web:h-12 web:rounded-full')}
+              >
+                {submitting ? (
+                  <ActivityIndicator color={colors.primaryForeground} />
+                ) : (
+                  <Text className="font-semibold text-white">Sign in</Text>
+                )}
+              </Button>
+              <Text
+                variant="footnote"
+                color="tertiary"
+                className={cn('text-center leading-5', isWeb && 'text-[13px]')}
+              >
+                Mock environment • Credentials are prefilled for demo purposes
+              </Text>
+            </View>
+          </View>
+        </View>
+      </ScrollView>
+    </KeyboardAvoidingView>
+  );
+}

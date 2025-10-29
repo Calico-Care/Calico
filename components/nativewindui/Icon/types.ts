@@ -5,14 +5,33 @@ import type { IconMapper } from 'rn-icon-mapper';
 
 type MaterialCommunityIconsProps = React.ComponentProps<typeof MaterialCommunityIcons>;
 type MaterialIconsProps = React.ComponentProps<typeof MaterialIcons>;
+type MaterialCommunityIconName = MaterialCommunityIconsProps['name'];
 
 type Style = SymbolViewProps['style'] &
   MaterialIconsProps['style'] &
   MaterialCommunityIconsProps['style'];
 
-type IconProps = IconMapper<SymbolViewProps, MaterialIconsProps, MaterialCommunityIconsProps> & {
-  style?: Style;
-  className?: string;
+type IconMapperProps = IconMapper<SymbolViewProps, MaterialIconsProps, MaterialCommunityIconsProps>;
+
+type MaterialCommunityOnly = {
+  name?: undefined;
+  sfSymbol?: undefined;
+  materialIcon?: undefined;
+  materialCommunityIcon: MaterialCommunityIconsProps;
 };
 
-export type { IconProps };
+type MaterialOnly = {
+  name?: undefined;
+  sfSymbol?: undefined;
+  materialCommunityIcon?: undefined;
+  materialIcon: MaterialIconsProps;
+};
+
+type IconProps = (IconMapperProps | MaterialCommunityOnly | MaterialOnly) & {
+  style?: Style;
+  className?: string;
+  size?: number;
+  color?: string;
+};
+
+export type { IconProps, MaterialCommunityIconName };

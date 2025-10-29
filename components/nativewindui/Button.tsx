@@ -1,6 +1,5 @@
-import * as Slot from '@rn-primitives/slot';
 import { cva, type VariantProps } from 'class-variance-authority';
-import { Platform, Pressable, PressableProps, View, ViewStyle } from 'react-native';
+import { Platform, Pressable, PressableProps, StyleProp, View, ViewStyle } from 'react-native';
 
 import { TextClassContext } from '@/components/nativewindui/Text';
 import { cn } from '@/lib/cn';
@@ -101,39 +100,81 @@ type AndroidOnlyButtonProps = {
 
 type ButtonProps = PressableProps & ButtonVariantProps & AndroidOnlyButtonProps;
 
-const Root = Platform.OS === 'android' ? View : Slot.Pressable;
+type ButtonSize = NonNullable<ButtonProps['size']>;
+
+const WEB_SIZE_STYLES: Record<ButtonSize, ViewStyle> = {
+  none: {},
+  sm: { paddingVertical: 4, paddingHorizontal: 12, borderRadius: 9999 },
+  md: { paddingVertical: 8, paddingHorizontal: 16, borderRadius: 12 },
+  lg: { paddingVertical: 10, paddingHorizontal: 20, borderRadius: 16 },
+  icon: {
+    width: 40,
+    height: 40,
+    borderRadius: 9999,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+};
 
 function Button({
   className,
   variant = 'primary',
   size,
-  style = BORDER_CURVE,
+  style,
   androidRootClassName,
   ...props
 }: ButtonProps) {
-  const { colorScheme } = useColorScheme();
+  const { colorScheme, colors } = useColorScheme();
+  const pressableClassName = buttonVariants({ variant, size, className });
+  const rootClassName =
+    Platform.OS === 'android'
+      ? androidRootVariants({
+          size,
+          className: androidRootClassName,
+        })
+      : undefined;
+
+  const isWeb = Platform.OS === 'web';
+  const sizeKey: ButtonSize = size ?? 'md';
+
+  const webVariantStyles: Record<NonNullable<ButtonVariantProps['variant']>, ViewStyle> = {
+    primary: { backgroundColor: colors.primary },
+    secondary: { borderWidth: 1, borderColor: colors.foreground, backgroundColor: 'transparent' },
+    tonal: {
+      backgroundColor: withOpacity(colors.primary, colorScheme === 'dark' ? 0.3 : 0.18),
+    },
+    plain: { backgroundColor: 'transparent' },
+  };
+
+  const baseStyle: StyleProp<ViewStyle>[] = isWeb
+    ? [WEB_SIZE_STYLES[sizeKey], webVariantStyles[variant], BORDER_CURVE]
+    : [BORDER_CURVE];
+
+  const mergedStyle: PressableProps['style'] =
+    typeof style === 'function'
+      ? (state) => {
+          const resolved = style(state);
+          const array = Array.isArray(resolved) ? resolved : resolved ? [resolved] : [];
+          return [...baseStyle, ...array];
+        }
+      : [...baseStyle, ...(Array.isArray(style) ? style : style ? [style] : [])];
+
+  const buttonElement = (
+    <Pressable
+      className={cn(props.disabled && 'opacity-50', pressableClassName)}
+      style={mergedStyle}
+      android_ripple={ANDROID_RIPPLE[colorScheme][variant]}
+      {...props}
+    />
+  );
 
   return (
     <TextClassContext.Provider value={buttonTextVariants({ variant, size })}>
-      <Root
-        className={Platform.select({
-          ios: undefined,
-          default: androidRootVariants({
-            size,
-            className: androidRootClassName,
-          }),
-        })}
-      >
-        <Pressable
-          className={cn(
-            props.disabled && 'opacity-50',
-            buttonVariants({ variant, size, className })
-          )}
-          style={style}
-          android_ripple={ANDROID_RIPPLE[colorScheme][variant]}
-          {...props}
-        />
-      </Root>
+      {Platform.OS === 'android' ? (
+        <View className={rootClassName}>{buttonElement}</View>
+      ) : (
+        buttonElement
+      )}
     </TextClassContext.Provider>
   );
 }

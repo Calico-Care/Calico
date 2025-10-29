@@ -1,3 +1,6 @@
+import '@/lib/polyfills/process';
+import '@/lib/polyfills/setImmediate';
+import '@/lib/polyfills/util';
 import '@/global.css';
 import '@/lib/i18n';
 
@@ -82,7 +85,7 @@ export {
 
 const isIos26 = Platform.select({ default: false, ios: Device.osVersion?.startsWith('26.') });
 
-export default Sentry.wrap(function RootLayout() {
+const RootLayout = Sentry.wrap(function RootLayout() {
   const { colorScheme, isDarkColorScheme } = useColorScheme();
 
   useEffect(() => {
@@ -109,6 +112,9 @@ export default Sentry.wrap(function RootLayout() {
           <NavThemeProvider value={NAV_THEME[colorScheme]}>
             <Stack>
               <Stack.Screen name="index" options={INDEX_OPTIONS} />
+              <Stack.Screen name="role-selection" options={ROLE_SELECTION_OPTIONS} />
+              <Stack.Screen name="clinician" options={CLINICIAN_OPTIONS} />
+              <Stack.Screen name="patient" options={PATIENT_OPTIONS} />
               <Stack.Screen name="modal" options={MODAL_OPTIONS} />
             </Stack>
           </NavThemeProvider>
@@ -118,11 +124,36 @@ export default Sentry.wrap(function RootLayout() {
   );
 });
 
+export default RootLayout;
+
 const INDEX_OPTIONS = {
+  headerShown: false,
+} as const;
+
+const ROLE_SELECTION_OPTIONS = {
+  title: 'Choose workspace',
   headerLargeTitle: true,
   headerTransparent: isIos26,
-  title: 'NativewindUI',
   headerRight: () => <SettingsIcon />,
+} as const;
+
+const CLINICIAN_OPTIONS = {
+  title: 'Clinician dashboard',
+  headerLargeTitle: false,
+  headerRight: () => <SettingsIcon />,
+} as const;
+
+const PATIENT_OPTIONS = {
+  title: 'Patient dashboard',
+  headerLargeTitle: false,
+  headerRight: () => <SettingsIcon />,
+} as const;
+
+const MODAL_OPTIONS = {
+  presentation: 'modal',
+  animation: 'fade_from_bottom', // for android
+  title: 'Settings',
+  headerRight: () => <ThemeToggle />,
 } as const;
 
 function SettingsIcon() {
@@ -134,10 +165,3 @@ function SettingsIcon() {
     </Link>
   );
 }
-
-const MODAL_OPTIONS = {
-  presentation: 'modal',
-  animation: 'fade_from_bottom', // for android
-  title: 'Settings',
-  headerRight: () => <ThemeToggle />,
-} as const;
