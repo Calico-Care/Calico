@@ -15,5 +15,6 @@
     "expo-env.d.ts",
     "nativewind-env.d.ts",
     "types/polyfills.d.ts"
-  ]
+  ],
+  "exclude": ["supabase/**"]
 }
