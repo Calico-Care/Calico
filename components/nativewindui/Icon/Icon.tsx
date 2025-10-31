@@ -13,23 +13,41 @@ function Icon({
   materialIcon,
   sfSymbol: _sfSymbol,
   size = 24,
+  accessibilityLabel,
+  accessibilityRole = 'image',
+  accessibilityHint,
   ...props
 }: IconProps) {
   const { colors } = useColorScheme();
   const defaultColor = colors.foreground;
+
+  const accessibilityProps = {
+    accessibilityLabel,
+    accessibilityRole: accessibilityRole === 'none' ? undefined : accessibilityRole,
+    accessibilityHint,
+  };
 
   if (materialCommunityIcon) {
     return (
       <MaterialCommunityIcons
         size={size}
         color={defaultColor}
+        {...accessibilityProps}
         {...props}
         {...materialCommunityIcon}
       />
     );
   }
   if (materialIcon) {
-    return <MaterialIcons size={size} color={defaultColor} {...props} {...materialIcon} />;
+    return (
+      <MaterialIcons
+        size={size}
+        color={defaultColor}
+        {...accessibilityProps}
+        {...props}
+        {...materialIcon}
+      />
+    );
   }
   const materialCommunityIconName =
     SF_SYMBOLS_TO_MATERIAL_COMMUNITY_ICONS[
@@ -41,6 +59,7 @@ function Icon({
         name={materialCommunityIconName}
         size={size}
         color={defaultColor}
+        {...accessibilityProps}
         {...props}
       />
     );
@@ -48,9 +67,25 @@ function Icon({
   const materialIconName =
     SF_SYMBOLS_TO_MATERIAL_ICONS[name as keyof typeof SF_SYMBOLS_TO_MATERIAL_ICONS];
   if (materialIconName) {
-    return <MaterialIcons name={materialIconName} size={size} color={defaultColor} {...props} />;
+    return (
+      <MaterialIcons
+        name={materialIconName}
+        size={size}
+        color={defaultColor}
+        {...accessibilityProps}
+        {...props}
+      />
+    );
   }
-  return <MaterialCommunityIcons name="help" size={size} color={defaultColor} {...props} />;
+  return (
+    <MaterialCommunityIcons
+      name="help"
+      size={size}
+      color={defaultColor}
+      {...accessibilityProps}
+      {...props}
+    />
+  );
 }
 
 export { Icon };

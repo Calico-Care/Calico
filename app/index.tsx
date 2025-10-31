@@ -9,10 +9,12 @@ import {
   View,
 } from 'react-native';
 
+import { SkipLink } from '@/components/accessibility/SkipLink';
 import { Button } from '@/components/nativewindui/Button';
 import { Icon } from '@/components/nativewindui/Icon';
 import type { MaterialCommunityIconName } from '@/components/nativewindui/Icon/types';
 import { Text } from '@/components/nativewindui/Text';
+import { getIconLabel } from '@/lib/accessibility';
 import { cn } from '@/lib/cn';
 import { useColorScheme } from '@/lib/useColorScheme';
 
@@ -42,7 +44,7 @@ export default function LoginScreen() {
   const [accessCode, setAccessCode] = useState('triage-demo');
   const [submitting, setSubmitting] = useState(false);
   const isWeb = Platform.OS === 'web';
-  const scrollStyle = isWeb ? { backgroundColor: '#f6f8ff' } : undefined;
+  const scrollClassName = isWeb ? 'web:bg-card' : undefined;
 
   function handleLogin() {
     if (submitting) {
@@ -60,12 +62,16 @@ export default function LoginScreen() {
       behavior={Platform.OS === 'ios' ? 'padding' : undefined}
       className={cn('flex-1 bg-background', isWeb && 'bg-transparent')}
     >
+      {isWeb && <SkipLink href="#main-content" />}
       <ScrollView
         contentInsetAdjustmentBehavior="automatic"
         keyboardShouldPersistTaps="handled"
         contentContainerStyle={{ flexGrow: 1 }}
-        className="flex-1"
-        style={scrollStyle}
+        className={cn('flex-1 bg-background', scrollClassName)}
+        {...(isWeb &&
+          ({
+            id: 'main-content',
+          } as any))}
       >
         <View className={cn('flex-1 items-center justify-center px-6 py-10', isWeb && 'py-20')}>
           <View
@@ -81,6 +87,7 @@ export default function LoginScreen() {
                   'font-semibold text-foreground',
                   isWeb && 'text-5xl leading-tight tracking-tight'
                 )}
+                accessibilityRole="header"
               >
                 Welcome back to Calico Care.
               </Text>
@@ -100,6 +107,8 @@ export default function LoginScreen() {
                           materialCommunityIcon={{ name: item.icon }}
                           className="text-primary"
                           size={20}
+                          accessibilityLabel={getIconLabel(item.icon)}
+                          accessibilityRole="none"
                         />
                       </View>
                       <Text variant="body" className="flex-1 text-foreground">
@@ -118,10 +127,20 @@ export default function LoginScreen() {
               )}
             >
               <View className="gap-2">
-                <Text variant="subhead" className="text-foreground">
+                <Text
+                  variant="subhead"
+                  className="text-foreground"
+                  // @ts-expect-error - web-only htmlFor prop
+                  htmlFor={isWeb ? 'email-input' : undefined}
+                >
                   Organization email
                 </Text>
                 <TextInput
+                  {...(isWeb &&
+                    ({
+                      id: 'email-input',
+                      'aria-required': 'true',
+                    } as any))}
                   autoCapitalize="none"
                   autoComplete="email"
                   keyboardType="email-address"
@@ -131,15 +150,27 @@ export default function LoginScreen() {
                   onChangeText={setEmail}
                   className={cn(
                     'w-full rounded-xl border border-border/80 bg-background px-4 py-[14px] text-base text-foreground',
-                    isWeb && 'web:border-white/70 web:bg-white'
+                    isWeb && 'web:border-white/70 web:bg-white web:min-h-[48px]'
                   )}
+                  accessibilityLabel="Organization email address"
+                  accessibilityHint="Enter your organization email address to sign in"
                 />
               </View>
               <View className="gap-2">
-                <Text variant="subhead" className="text-foreground">
+                <Text
+                  variant="subhead"
+                  className="text-foreground"
+                  // @ts-expect-error - web-only htmlFor prop
+                  htmlFor={isWeb ? 'access-code-input' : undefined}
+                >
                   Access code
                 </Text>
                 <TextInput
+                  {...(isWeb &&
+                    ({
+                      id: 'access-code-input',
+                      'aria-required': 'true',
+                    } as any))}
                   autoCapitalize="none"
                   secureTextEntry
                   placeholder="Enter secure access code"
@@ -148,17 +179,25 @@ export default function LoginScreen() {
                   onChangeText={setAccessCode}
                   className={cn(
                     'w-full rounded-xl border border-border/80 bg-background px-4 py-[14px] text-base text-foreground',
-                    isWeb && 'web:border-white/70 web:bg-white'
+                    isWeb && 'web:border-white/70 web:bg-white web:min-h-[48px]'
                   )}
+                  accessibilityLabel="Access code"
+                  accessibilityHint="Enter your secure access code"
                 />
               </View>
               <Button
                 onPress={handleLogin}
                 disabled={submitting}
                 className={cn('mt-2', isWeb && 'web:h-12 web:rounded-full')}
+                accessibilityLabel="Sign in to Calico Care"
+                accessibilityHint="Signs in with your organization email and access code"
+                accessibilityState={{ disabled: submitting }}
               >
                 {submitting ? (
-                  <ActivityIndicator color={colors.primaryForeground} />
+                  <ActivityIndicator
+                    color={colors.primaryForeground}
+                    accessibilityLabel="Signing in"
+                  />
                 ) : (
                   <Text className="font-semibold text-white">Sign in</Text>
                 )}
@@ -168,7 +207,7 @@ export default function LoginScreen() {
                 color="tertiary"
                 className={cn('text-center leading-5', isWeb && 'text-[13px]')}
               >
-                Mock environment • Credentials are prefilled for demo purposes
+                Mock environment ? Credentials are prefilled for demo purposes
               </Text>
             </View>
           </View>
