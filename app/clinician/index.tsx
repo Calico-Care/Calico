@@ -6,7 +6,6 @@ import { Button } from '@/components/nativewindui/Button';
 import { Icon } from '@/components/nativewindui/Icon';
 import type { MaterialCommunityIconName } from '@/components/nativewindui/Icon/types';
 import { Text } from '@/components/nativewindui/Text';
-import { getIconLabel } from '@/lib/accessibility';
 import { cn } from '@/lib/cn';
 import { useTranslation } from '@/lib/i18n';
 import { clinicianPatients, type PatientSummary } from '@/lib/mockData';
@@ -54,17 +53,17 @@ function RiskBadge({ risk }: { risk: PatientSummary['riskLevel'] }) {
 export default function ClinicianDashboardScreen() {
   const router = useRouter();
   const isWeb = Platform.OS === 'web';
-  const scrollClassName = isWeb ? 'web:bg-[#f5f8ff]' : undefined;
+  const scrollClassName = isWeb ? 'web:bg-[#fafafa]' : undefined;
   const { t } = useTranslation();
+
+  // Typed web-only props for ScrollView (e.g., id for anchor navigation)
+  const webProps = isWeb ? ({ id: 'main-content' } as { id: string }) : undefined;
 
   return (
     <ScrollView
       contentInsetAdjustmentBehavior="automatic"
       className={cn('flex-1 bg-background', scrollClassName)}
-      {...(isWeb &&
-        ({
-          id: 'main-content',
-        } as any))}
+      {...webProps}
     >
       {isWeb && <SkipLink href="#main-content" />}
       <View className={cn('gap-6 px-6 pb-16 pt-8', isWeb && 'items-center py-16')}>
@@ -86,9 +85,8 @@ export default function ClinicianDashboardScreen() {
           className={cn(
             'flex-row flex-wrap gap-4 rounded-2xl border border-border bg-card p-4 shadow-sm shadow-black/5 dark:border-border/60 dark:bg-card/95',
             isWeb &&
-              'web:w-full web:max-w-5xl web:grid web:grid-cols-3 web:gap-6 web:border-white/60 web:bg-white/95 web:p-6 web:shadow-lg web:shadow-primary/5 web:backdrop-blur-lg'
+              'web:w-full web:max-w-5xl web:grid web:grid-cols-3 web:gap-6 web:border-gray-200 web:bg-white web:p-6 web:shadow-xl web:shadow-gray-300/40'
           )}
-          accessibilityRole="list"
           accessibilityLabel="Dashboard summary statistics"
         >
           <SummaryTile
@@ -101,28 +99,27 @@ export default function ClinicianDashboardScreen() {
             icon="bell-badge"
             label="Alerts in review"
             value="6"
-            trend="3 red ? 3 yellow"
+            trend="3 red — 3 yellow"
           />
           <SummaryTile
             icon="phone-alert"
             label="Escalations today"
             value="4"
-            trend="2 nurse ? 2 VAPI"
+            trend="2 nurse — 2 VAPI"
           />
         </View>
 
         <View
           className={cn('gap-4', isWeb && 'w-full max-w-5xl web:gap-6')}
-          accessibilityRole="list"
           accessibilityLabel="Patient list"
         >
           {clinicianPatients.map((patient) => (
             <View
               key={patient.id}
               className={cn(
-                'gap-4 rounded-2xl border border-border bg-card p-5 shadow-sm shadow-black/5 dark:border-border/60 dark:bg-card/95',
+                'gap-5 rounded-2xl border border-border bg-card p-6 shadow-sm shadow-black/5 dark:border-border/60 dark:bg-card/95',
                 isWeb &&
-                  'web:rounded-3xl web:border-white/70 web:bg-white/95 web:p-8 web:shadow-lg web:shadow-primary/5 web:backdrop-blur-lg'
+                  'web:rounded-3xl web:border-gray-200 web:bg-white web:p-10 web:shadow-xl web:shadow-gray-300/40 web:gap-6'
               )}
               accessibilityLabel={`Patient ${patient.name}, ${patient.age} years old, ${patient.riskLevel} risk`}
             >
@@ -131,8 +128,14 @@ export default function ClinicianDashboardScreen() {
                   <Text variant="title2" className="font-semibold text-foreground">
                     {patient.name}
                   </Text>
-                  <Text variant="footnote" color="tertiary">
-                    {patient.program} program ? {patient.age} yrs
+                  <Text
+                    variant="footnote"
+                    color="tertiary"
+                    accessibilityLabel={`${patient.program} program, ${patient.age} years`}
+                  >
+                    <Text>{patient.program} program </Text>
+                    <Text accessibilityRole="none">·</Text>
+                    <Text> {patient.age} yrs</Text>
                   </Text>
                 </View>
                 <RiskBadge risk={patient.riskLevel} />
@@ -142,7 +145,7 @@ export default function ClinicianDashboardScreen() {
               </Text>
 
               <View
-                className="flex-row flex-wrap gap-3"
+                className={cn('flex-row flex-wrap gap-3', isWeb && 'web:gap-4')}
                 accessibilityRole="list"
                 accessibilityLabel="Patient vital metrics"
               >
@@ -150,10 +153,11 @@ export default function ClinicianDashboardScreen() {
                   <View
                     key={`${patient.id}-${metric.label}`}
                     className={cn(
-                      'min-w-[140px] flex-1 gap-2 rounded-xl border border-border/70 bg-background/60 p-3',
+                      'min-w-[140px] flex-1 gap-2.5 rounded-xl border border-border/70 bg-background/60 p-4',
                       isWeb &&
-                        'web:bg-white web:border-white/60 web:shadow-sm web:shadow-black/5 web:p-4'
+                        'web:bg-white web:border-gray-200 web:shadow-md web:shadow-gray-200/30 web:p-5 web:gap-3'
                     )}
+                    accessibilityRole={'listitem' as any}
                     accessibilityLabel={`${metric.label}: ${metric.value}${metric.delta ? `. ${metric.delta}` : ''}${metric.threshold ? `. ${metric.threshold}` : ''}`}
                   >
                     <Text variant="footnote" color="tertiary" className="uppercase tracking-wide">
@@ -176,7 +180,12 @@ export default function ClinicianDashboardScreen() {
                 ))}
               </View>
 
-              <View className="gap-2 rounded-xl bg-primary/5 p-3">
+              <View
+                className={cn(
+                  'gap-2 rounded-xl bg-primary/5 p-3',
+                  isWeb && 'web:bg-blue-50 web:border web:border-blue-100 web:p-4'
+                )}
+              >
                 <Text variant="subhead" className="font-semibold text-primary">
                   Care team note
                 </Text>
@@ -241,7 +250,7 @@ function SummaryTile({
       className={cn(
         'min-w-[150px] flex-1 gap-2 rounded-xl border border-border/60 bg-background/70 p-4',
         isWeb &&
-          'web:rounded-2xl web:border-white/60 web:bg-white web:shadow-sm web:shadow-primary/5 web:p-5'
+          'web:rounded-2xl web:border-gray-200 web:bg-white web:shadow-md web:shadow-gray-200/30 web:p-5'
       )}
       accessibilityRole={'listitem' as any}
       accessibilityLabel={`${label}: ${value}. ${trend}`}
@@ -252,7 +261,6 @@ function SummaryTile({
             materialCommunityIcon={{ name: icon }}
             className="text-primary"
             size={18}
-            accessibilityLabel={getIconLabel(icon)}
             accessibilityRole="none"
           />
         </View>

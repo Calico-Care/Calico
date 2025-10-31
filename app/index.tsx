@@ -44,7 +44,7 @@ export default function LoginScreen() {
   const [accessCode, setAccessCode] = useState('triage-demo');
   const [submitting, setSubmitting] = useState(false);
   const isWeb = Platform.OS === 'web';
-  const scrollClassName = isWeb ? 'web:bg-card' : undefined;
+  const scrollClassName = isWeb ? 'web:bg-[#fafafa]' : undefined;
 
   function handleLogin() {
     if (submitting) {
@@ -100,7 +100,7 @@ export default function LoginScreen() {
                   {WEB_HIGHLIGHTS.map((item) => (
                     <View
                       key={item.copy}
-                      className="flex-row items-center gap-3 rounded-2xl border border-white/70 bg-white/70 px-4 py-3 shadow-sm shadow-black/10 backdrop-blur-sm"
+                      className="flex-row items-center gap-3 rounded-2xl border border-gray-200 bg-white px-4 py-3 shadow-md shadow-gray-200/50"
                     >
                       <View className="rounded-full bg-primary/10 p-2.5">
                         <Icon
@@ -121,12 +121,12 @@ export default function LoginScreen() {
             </View>
             <View
               className={cn(
-                'gap-4 rounded-2xl border border-border bg-card/90 p-6 shadow-sm shadow-black/5 dark:border-border/60 dark:bg-card',
+                'gap-5 rounded-2xl border border-border bg-card/90 p-6 shadow-sm shadow-black/5 dark:border-border/60 dark:bg-card',
                 isWeb &&
-                  'web:flex-1 web:max-w-md web:rounded-3xl web:border-white/70 web:bg-white/95 web:px-8 web:py-8 web:shadow-xl web:shadow-primary/5 web:backdrop-blur-lg'
+                  'web:flex-1 web:max-w-md web:rounded-3xl web:border-gray-200 web:bg-white web:px-10 web:py-10 web:shadow-xl web:shadow-gray-300/40 web:gap-6'
               )}
             >
-              <View className="gap-2">
+              <View className={cn('gap-2.5', isWeb && 'web:gap-3')}>
                 <Text
                   variant="subhead"
                   className="text-foreground"
@@ -150,13 +150,13 @@ export default function LoginScreen() {
                   onChangeText={setEmail}
                   className={cn(
                     'w-full rounded-xl border border-border/80 bg-background px-4 py-[14px] text-base text-foreground',
-                    isWeb && 'web:border-white/70 web:bg-white web:min-h-[48px]'
+                    isWeb && 'web:border-gray-300 web:bg-white web:min-h-[48px]'
                   )}
                   accessibilityLabel="Organization email address"
                   accessibilityHint="Enter your organization email address to sign in"
                 />
               </View>
-              <View className="gap-2">
+              <View className={cn('gap-2.5', isWeb && 'web:gap-3')}>
                 <Text
                   variant="subhead"
                   className="text-foreground"
@@ -179,7 +179,7 @@ export default function LoginScreen() {
                   onChangeText={setAccessCode}
                   className={cn(
                     'w-full rounded-xl border border-border/80 bg-background px-4 py-[14px] text-base text-foreground',
-                    isWeb && 'web:border-white/70 web:bg-white web:min-h-[48px]'
+                    isWeb && 'web:border-gray-300 web:bg-white web:min-h-[48px]'
                   )}
                   accessibilityLabel="Access code"
                   accessibilityHint="Enter your secure access code"

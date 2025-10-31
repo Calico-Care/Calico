@@ -13,13 +13,14 @@ function Icon({
   materialIcon,
   sfSymbol: _sfSymbol,
   size = 24,
+  color,
   accessibilityLabel,
   accessibilityRole = 'image',
   accessibilityHint,
   ...props
 }: IconProps) {
   const { colors } = useColorScheme();
-  const defaultColor = colors.foreground;
+  const defaultColor = color ?? colors.foreground;
 
   const accessibilityProps = {
     accessibilityLabel,

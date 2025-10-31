@@ -41,6 +41,12 @@ const CONSOLE_METHOD_MAP: Record<LogLevel, keyof Console> = {
  */
 function getAuditBufferLimit(): number {
   const defaultValue = 500;
+
+  // Guard against missing process or process.env (e.g., in some web shim scenarios)
+  if (typeof process === 'undefined' || !process.env) {
+    return defaultValue;
+  }
+
   const envValue = process.env.AUDIT_BUFFER_LIMIT;
 
   if (!envValue) {

@@ -15,7 +15,7 @@
     --secondary: 45 175 231;
     --secondary-foreground: 255 255 255;
     --muted: 175 176 180;
-    --muted-foreground: 142 142 147;
+    --muted-foreground: 65 65 70;
     --accent: 255 40 84;
     --accent-foreground: 255 255 255;
     --destructive: 239 68 68;
@@ -62,7 +62,7 @@
       --secondary: 100 211 254;
       --secondary-foreground: 255 255 255;
       --muted: 70 70 73;
-      --muted-foreground: 142 142 147;
+      --muted-foreground: 200 200 205;
       --accent: 255 52 95;
       --accent-foreground: 255 255 255;
       --destructive: 239 68 68;
@@ -108,8 +108,29 @@
   @media (min-width: 768px) {
     body {
       font-size: 18px;
-      line-height: 1.6;
+      line-height: 1.7;
     }
+  }
+
+  /* Improved contrast for tertiary text */
+  .text-muted-foreground\/90 {
+    color: rgb(var(--muted-foreground));
+    opacity: 0.9;
+  }
+
+  /* Enhanced card shadows for better depth */
+  .card-elevated {
+    box-shadow:
+      0 1px 3px 0 rgb(0 0 0 / 0.05),
+      0 4px 6px -1px rgb(0 0 0 / 0.05),
+      0 2px 4px -1px rgb(0 0 0 / 0.03);
+  }
+
+  .card-elevated-web {
+    box-shadow:
+      0 4px 6px -1px rgb(0 0 0 / 0.08),
+      0 10px 15px -3px rgb(0 0 0 / 0.1),
+      0 2px 4px -1px rgb(0 0 0 / 0.05);
   }
 
   /* Skip link for keyboard navigation */
