@@ -492,8 +492,15 @@ jobs:
         with:
           version: latest
 
+      - name: Start Supabase database
+        run: supabase db start
+
       - name: Lint Supabase migrations
         run: supabase db lint
+
+      - name: Stop Supabase services
+        if: always()
+        run: supabase stop
 
   sast_and_secrets:
     name: Gitleaks

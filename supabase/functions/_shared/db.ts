@@ -1,13 +1,11 @@
-import { Pool, PoolClient } from "https://deno.land/x/postgres@v0.17.2/mod.ts";
+import { Pool, PoolClient } from 'https://deno.land/x/postgres@v0.17.2/mod.ts';
 
-const DB_URL = Deno.env.get("APP_DB_URL");
-if (!DB_URL) throw new Error("Missing APP_DB_URL");
+const DB_URL = Deno.env.get('APP_DB_URL');
+if (!DB_URL) throw new Error('Missing APP_DB_URL');
 
 export const pool = new Pool(DB_URL, 3, true);
 
-export async function withConn<T>(
-  cb: (conn: PoolClient) => Promise<T> | T
-): Promise<T> {
+export async function withConn<T>(cb: (conn: PoolClient) => Promise<T> | T): Promise<T> {
   const conn = await pool.connect();
   try {
     return await cb(conn);
@@ -34,7 +32,7 @@ export async function withTenant<T>(
     try {
       await conn.queryArray`rollback`;
     } catch (rollbackErr) {
-      console.error("rollback failed", rollbackErr);
+      console.error('rollback failed', rollbackErr);
     }
     throw e;
   } finally {
