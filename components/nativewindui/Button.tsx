@@ -7,28 +7,31 @@ import { useColorScheme } from '@/lib/useColorScheme';
 import { COLORS } from '@/theme/colors';
 import { withOpacity } from '@/theme/with-opacity';
 
-const buttonVariants = cva('flex-row items-center justify-center gap-2', {
-  variants: {
-    variant: {
-      primary: 'ios:active:opacity-80 bg-primary',
-      secondary: 'ios:border-primary ios:active:bg-primary/5 border border-foreground/40',
-      tonal:
-        'ios:bg-primary/10 dark:ios:bg-primary/10 ios:active:bg-primary/15 bg-primary/15 dark:bg-primary/30',
-      plain: 'ios:active:opacity-70',
+const buttonVariants = cva(
+  'flex-row items-center justify-center gap-2 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2',
+  {
+    variants: {
+      variant: {
+        primary: 'ios:active:opacity-80 bg-primary',
+        secondary: 'ios:border-primary ios:active:bg-primary/5 border border-foreground/40',
+        tonal:
+          'ios:bg-primary/10 dark:ios:bg-primary/10 ios:active:bg-primary/15 bg-primary/15 dark:bg-primary/30',
+        plain: 'ios:active:opacity-70',
+      },
+      size: {
+        none: '',
+        sm: 'py-1 px-2.5 rounded-full min-h-[44px]',
+        md: 'ios:rounded-lg py-2 ios:py-1.5 ios:px-3.5 px-5 rounded-full min-h-[44px]',
+        lg: 'py-2.5 px-5 ios:py-2 rounded-xl gap-2 min-h-[48px]',
+        icon: 'ios:rounded-lg h-11 w-11 rounded-full min-h-[44px] min-w-[44px]',
+      },
     },
-    size: {
-      none: '',
-      sm: 'py-1 px-2.5 rounded-full',
-      md: 'ios:rounded-lg py-2 ios:py-1.5 ios:px-3.5 px-5 rounded-full',
-      lg: 'py-2.5 px-5 ios:py-2 rounded-xl gap-2',
-      icon: 'ios:rounded-lg h-10 w-10 rounded-full',
+    defaultVariants: {
+      variant: 'primary',
+      size: 'md',
     },
-  },
-  defaultVariants: {
-    variant: 'primary',
-    size: 'md',
-  },
-});
+  }
+);
 
 const androidRootVariants = cva('overflow-hidden', {
   variants: {
@@ -104,15 +107,17 @@ type ButtonSize = NonNullable<ButtonProps['size']>;
 
 const WEB_SIZE_STYLES: Record<ButtonSize, ViewStyle> = {
   none: {},
-  sm: { paddingVertical: 4, paddingHorizontal: 12, borderRadius: 9999 },
-  md: { paddingVertical: 8, paddingHorizontal: 16, borderRadius: 12 },
-  lg: { paddingVertical: 10, paddingHorizontal: 20, borderRadius: 16 },
+  sm: { paddingVertical: 10, paddingHorizontal: 16, borderRadius: 9999, minHeight: 44 },
+  md: { paddingVertical: 12, paddingHorizontal: 20, borderRadius: 12, minHeight: 48 },
+  lg: { paddingVertical: 14, paddingHorizontal: 24, borderRadius: 16, minHeight: 52 },
   icon: {
-    width: 40,
-    height: 40,
+    width: 48,
+    height: 48,
     borderRadius: 9999,
     alignItems: 'center',
     justifyContent: 'center',
+    minWidth: 48,
+    minHeight: 48,
   },
 };
 
@@ -164,6 +169,8 @@ function Button({
       className={cn(props.disabled && 'opacity-50', pressableClassName)}
       style={mergedStyle}
       android_ripple={ANDROID_RIPPLE[colorScheme][variant]}
+      accessibilityRole="button"
+      accessibilityState={{ disabled: props.disabled ?? false }}
       {...props}
     />
   );

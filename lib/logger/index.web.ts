@@ -32,7 +32,39 @@ const CONSOLE_METHOD_MAP: Record<LogLevel, keyof Console> = {
   error: 'error',
 };
 
-const AUDIT_BUFFER_LIMIT = 500;
+/**
+ * Parses and validates the audit buffer limit from environment variable.
+ * Reads from process.env.AUDIT_BUFFER_LIMIT with a default of 500.
+ * Validates that the value is a positive integer, falling back to default if invalid.
+ *
+ * @returns A validated positive integer for the audit buffer limit
+ */
+function getAuditBufferLimit(): number {
+  const defaultValue = 500;
+  const envValue = process.env.AUDIT_BUFFER_LIMIT;
+
+  if (!envValue) {
+    return defaultValue;
+  }
+
+  const parsed = Number.parseInt(envValue, 10);
+
+  if (Number.isNaN(parsed) || parsed <= 0 || !Number.isInteger(parsed)) {
+    console.warn(
+      `Invalid AUDIT_BUFFER_LIMIT value "${envValue}". Must be a positive integer. Using default: ${defaultValue}`
+    );
+    return defaultValue;
+  }
+
+  return parsed;
+}
+
+/**
+ * Maximum number of audit log records to buffer before discarding oldest entries.
+ * Configurable via AUDIT_BUFFER_LIMIT environment variable (default: 500).
+ * Must be a positive integer.
+ */
+const AUDIT_BUFFER_LIMIT = getAuditBufferLimit();
 
 const auditBuffer: AuditLogRecord[] = [];
 
@@ -264,7 +296,7 @@ function flushAuditBuffer() {
 export const auditController: AuditController = {
   flush: flushAuditBuffer,
   getBufferedRecords() {
-    return auditBuffer;
+    return auditBuffer.slice();
   },
 };
 
