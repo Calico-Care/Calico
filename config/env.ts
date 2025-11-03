@@ -1,5 +1,57 @@
 import Constants from 'expo-constants';
 
+function parseSampleRate(value: string | undefined, fallback: number): number {
+  if (!value) {
+    return fallback;
+  }
+
+  const parsed = Number.parseFloat(value);
+  if (Number.isFinite(parsed) && parsed >= 0 && parsed <= 1) {
+    return parsed;
+  }
+
+  console.warn(
+    `Invalid EXPO_PUBLIC_SENTRY_TRACES_SAMPLE_RATE "${value}" provided. Falling back to ${fallback}.`
+  );
+  return fallback;
+}
+
+function parseTracePropagationTargets(
+  value: string | undefined,
+  defaultTargets: (string | RegExp)[]
+) {
+  if (!value) {
+    return defaultTargets;
+  }
+
+  const targets = value
+    .split(',')
+    .map((entry) => entry.trim())
+    .filter(Boolean);
+
+  return targets.length > 0 ? targets : defaultTargets;
+}
+
+const expoEnv = process.env.EXPO_PUBLIC_ENV;
+const isDevelopment = expoEnv === 'development' || __DEV__;
+const isProduction = expoEnv === 'production';
+const apiUrl = process.env.EXPO_PUBLIC_API_URL || 'https://api.example.com';
+
+const defaultTracePropagationTargets: (string | RegExp)[] = [
+  apiUrl,
+  /^https?:\/\/localhost(:\d+)?$/i,
+];
+
+const sentryTracesSampleRate = parseSampleRate(
+  process.env.EXPO_PUBLIC_SENTRY_TRACES_SAMPLE_RATE,
+  isProduction ? 0.05 : 1
+);
+
+const sentryTracePropagationTargets = parseTracePropagationTargets(
+  process.env.EXPO_PUBLIC_SENTRY_TRACE_PROPAGATION_TARGETS,
+  defaultTracePropagationTargets
+);
+
 /**
  * Environment configuration
  *
@@ -25,16 +77,20 @@ export const env = {
     'https://e6b1ecb60dc09016b1b2c9991c40b916@o4510205406281728.ingest.us.sentry.io/4510205414604800',
 
   // API
-  apiUrl: process.env.EXPO_PUBLIC_API_URL || 'https://api.example.com',
+  apiUrl,
 
   // Environment
-  isDevelopment: process.env.EXPO_PUBLIC_ENV === 'development' || __DEV__,
-  isProduction: process.env.EXPO_PUBLIC_ENV === 'production',
+  isDevelopment,
+  isProduction,
 
   // App Info
   appVersion: Constants.expoConfig?.version || '1.0.0',
   buildVersion:
     Constants.expoConfig?.ios?.buildNumber || Constants.expoConfig?.android?.versionCode || '1',
+
+  // Sentry tracing
+  sentryTracesSampleRate,
+  sentryTracePropagationTargets,
 } as const;
 
 // Validate required environment variables in production

@@ -1079,6 +1079,8 @@ Located in `.github/labeler.yml`, defines auto-labels for PRs based on file patt
 - `EXPO_PUBLIC_SUPABASE_URL` — Supabase project URL
 - `EXPO_PUBLIC_SUPABASE_PUBLISHABLE_KEY` — Supabase publishable key (public, starts with `sb_publishable_...`)
 - `EXPO_PUBLIC_SENTRY_DSN` — Sentry error tracking DSN
+- `EXPO_PUBLIC_SENTRY_TRACES_SAMPLE_RATE` — Optional Sentry tracing sample rate (0-1; defaults to `1` in development and `0.05` in production)
+- `EXPO_PUBLIC_SENTRY_TRACE_PROPAGATION_TARGETS` — Optional comma-delimited list of origins eligible for Sentry trace propagation (defaults to API URL and localhost)
 - `EXPO_PUBLIC_API_URL` — Custom API base URL
 - `EXPO_PUBLIC_ENV` — Environment flag (development/production)
 
