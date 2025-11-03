@@ -6,37 +6,13 @@
 import { serve } from 'https://deno.land/std@0.224.0/http/server.ts';
 import type { PoolClient } from 'https://deno.land/x/postgres@v0.17.2/mod.ts';
 import { withConn } from '../_shared/db.ts';
+import { stytchB2B } from '../_shared/stytch.ts';
 
-const STYTCH_PROJECT_ID = Deno.env.get('STYTCH_PROJECT_ID');
-const STYTCH_SECRET = Deno.env.get('STYTCH_SECRET');
-const STYTCH_ENV = Deno.env.get('STYTCH_ENV'); // 'live' or 'test'
 const CALICO_OPS_TOKEN = Deno.env.get('CALICO_OPS_TOKEN');
 
-if (!STYTCH_PROJECT_ID) throw new Error('Missing STYTCH_PROJECT_ID');
-if (!STYTCH_SECRET) throw new Error('Missing STYTCH_SECRET');
-if (STYTCH_ENV !== 'live' && STYTCH_ENV !== 'test') {
-  throw new Error("Invalid STYTCH_ENV (expected 'live' or 'test')");
-}
 if (!CALICO_OPS_TOKEN) throw new Error('Missing CALICO_OPS_TOKEN');
 
-const base = STYTCH_ENV === 'live' ? 'https://api.stytch.com/v1' : 'https://test.stytch.com/v1';
 const SLUG_RE = /^[a-z0-9._~-]{2,128}$/;
-
-async function createStytchOrg(name: string, slug: string) {
-  const res = await fetch(`${base}/b2b/organizations`, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      Authorization: `Basic ${btoa(`${STYTCH_PROJECT_ID}:${STYTCH_SECRET}`)}`,
-    },
-    body: JSON.stringify({
-      organization_name: name,
-      organization_slug: slug,
-    }),
-  });
-  if (!res.ok) throw new Error(`Stytch error: ${res.status} ${await res.text()}`);
-  return res.json();
-}
 
 serve(async (req: Request) => {
   try {
@@ -78,7 +54,7 @@ serve(async (req: Request) => {
         }
       );
 
-    const st = await createStytchOrg(name, slug);
+    const st = await stytchB2B.createOrganization(name, slug);
     const stytch_organization_id = st.organization?.organization_id ?? st.organization_id;
     if (!stytch_organization_id) throw new Error('Missing organization_id from Stytch');
     const q = await withConn(

@@ -27,8 +27,9 @@ export async function withTenant<T>(
     await conn.queryObject("SET LOCAL search_path = public");
     // SET LOCAL expects a string value; PostgreSQL will cast when reading via current_setting()
     await conn.queryObject("SET LOCAL app.org_id = $1", [orgId]);
-if (userId) await conn.queryObject("SET LOCAL app.user_id = $1", [userId])
-
+    if (userId) {
+      await conn.queryObject("SET LOCAL app.user_id = $1", [userId]);
+    }
     const res = await cb(conn);
     await conn.queryObject("COMMIT");
     return res;

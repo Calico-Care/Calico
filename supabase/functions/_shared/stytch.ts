@@ -2,6 +2,7 @@
  * Shared Stytch API Client
  * Purpose: Centralize Stytch API calls with error handling and type safety.
  */
+import { z } from "https://deno.land/x/zod@v3.23.8/mod.ts";
 
 const STYTCH_PROJECT_ID = Deno.env.get("STYTCH_PROJECT_ID");
 const STYTCH_SECRET = Deno.env.get("STYTCH_SECRET");
@@ -32,66 +33,92 @@ export function getStytchAuthHeader(): string {
 /**
  * Type definitions for Stytch API responses
  */
-export interface StytchB2BOrganization {
-  organization_id: string;
-  organization_name: string;
-  organization_slug: string;
-}
+export const StytchB2BOrganizationSchema = z.object({
+  organization_id: z.string(),
+  organization_name: z.string(),
+  organization_slug: z.string(),
+});
+export type StytchB2BOrganization = z.infer<typeof StytchB2BOrganizationSchema>;
 
-export interface StytchB2BOrganizationResponse {
-  organization?: StytchB2BOrganization;
-  organization_id?: string;
-}
+export const StytchB2BOrganizationResponseSchema = z.object({
+  organization: StytchB2BOrganizationSchema.optional(),
+  organization_id: z.string().optional(),
+});
+export type StytchB2BOrganizationResponse = z.infer<
+  typeof StytchB2BOrganizationResponseSchema
+>;
 
-export interface StytchB2BMember {
-  member_id: string;
-  email_address: string;
-  organization_id: string;
-}
+export const StytchB2BMemberSchema = z.object({
+  member_id: z.string(),
+  email_address: z.string(),
+  organization_id: z.string(),
+});
+export type StytchB2BMember = z.infer<typeof StytchB2BMemberSchema>;
 
-export interface StytchB2BInviteResponse {
-  status_code: number;
-  request_id: string;
-  member_id: string;
-  member?: StytchB2BMember;
-  organization?: {
-    organization_id: string;
-    organization_name: string;
-    organization_slug: string;
-  };
-  email_address?: string; // Deprecated, use member.email_address
-}
+export const StytchB2BInviteResponseSchema = z.object({
+  status_code: z.number(),
+  request_id: z.string(),
+  member_id: z.string(),
+  member: StytchB2BMemberSchema.optional(),
+  organization: z
+    .object({
+      organization_id: z.string(),
+      organization_name: z.string(),
+      organization_slug: z.string(),
+    })
+    .optional(),
+  email_address: z.string().optional(),
+});
+export type StytchB2BInviteResponse = z.infer<
+  typeof StytchB2BInviteResponseSchema
+>;
 
-export interface StytchB2BSession {
-  session_id: string;
-  member_id: string;
-  organization_id: string;
-  user_id: string;
-}
+export const StytchB2BSessionSchema = z.object({
+  session_id: z.string(),
+  member_id: z.string(),
+  organization_id: z.string(),
+  user_id: z.string(),
+});
+export type StytchB2BSession = z.infer<typeof StytchB2BSessionSchema>;
 
-export interface StytchB2BAuthenticateResponse {
-  session?: StytchB2BSession;
-  member?: StytchB2BMember;
-  organization_id?: string;
-}
+export const StytchB2BAuthenticateResponseSchema = z.object({
+  session: StytchB2BSessionSchema.optional(),
+  member: StytchB2BMemberSchema.optional(),
+  organization_id: z.string().optional(),
+});
+export type StytchB2BAuthenticateResponse = z.infer<
+  typeof StytchB2BAuthenticateResponseSchema
+>;
 
-export interface StytchConsumerMagicLink {
-  magic_link_id: string;
-}
+export const StytchConsumerMagicLinkSchema = z.object({
+  magic_link_id: z.string(),
+});
+export type StytchConsumerMagicLink = z.infer<
+  typeof StytchConsumerMagicLinkSchema
+>;
 
-export interface StytchConsumerMagicLinkResponse {
-  magic_link_id?: string;
-}
+export const StytchConsumerMagicLinkResponseSchema = z.object({
+  magic_link_id: z.string().optional(),
+});
+export type StytchConsumerMagicLinkResponse = z.infer<
+  typeof StytchConsumerMagicLinkResponseSchema
+>;
 
-export interface StytchConsumerSession {
-  session_id: string;
-  user_id: string;
-}
+export const StytchConsumerSessionSchema = z.object({
+  session_id: z.string(),
+  user_id: z.string(),
+});
+export type StytchConsumerSession = z.infer<
+  typeof StytchConsumerSessionSchema
+>;
 
-export interface StytchConsumerAuthenticateResponse {
-  session?: StytchConsumerSession;
-  user_id?: string;
-}
+export const StytchConsumerAuthenticateResponseSchema = z.object({
+  session: StytchConsumerSessionSchema.optional(),
+  user_id: z.string().optional(),
+});
+export type StytchConsumerAuthenticateResponse = z.infer<
+  typeof StytchConsumerAuthenticateResponseSchema
+>;
 
 /**
  * Stytch API error response
@@ -108,38 +135,81 @@ export interface StytchError {
  */
 export async function stytchFetch<T>(
   endpoint: string,
-  options: RequestInit = {}
+  options: RequestInit = {},
+  schema: z.ZodType<T>,
+  timeoutMs = 10_000
 ): Promise<T> {
+  const { signal: externalSignal, headers: optionHeaders, ...restOptions } =
+    options;
   const baseUrl = getStytchBaseUrl();
   const authHeader = getStytchAuthHeader();
 
-  const response = await fetch(`${baseUrl}${endpoint}`, {
-    ...options,
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: authHeader,
-      ...options.headers,
-    },
-  });
-
-  if (!response.ok) {
-    const errorText = await response.text();
-    let error: StytchError;
-    try {
-      error = JSON.parse(errorText);
-    } catch {
-      error = {
-        status_code: response.status,
-        error_type: "unknown",
-        error_message: errorText || `HTTP ${response.status}`,
-      };
-    }
-    throw new Error(
-      `Stytch API error: ${error.error_type} - ${error.error_message} (${error.status_code})`
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => {
+    controller.abort(
+      new DOMException("Stytch request timed out", "TimeoutError")
     );
+  }, timeoutMs);
+
+  let externalAbortHandler: (() => void) | undefined;
+  if (externalSignal) {
+    if (externalSignal.aborted) {
+      controller.abort(externalSignal.reason);
+    } else {
+      externalAbortHandler = () => {
+        controller.abort(
+          externalSignal.reason ??
+            new DOMException("Request aborted", "AbortError")
+        );
+      };
+      externalSignal.addEventListener("abort", externalAbortHandler, {
+        once: true,
+      });
+    }
   }
 
-  return response.json() as Promise<T>;
+  try {
+    const response = await fetch(`${baseUrl}${endpoint}`, {
+      ...restOptions,
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: authHeader,
+        ...optionHeaders,
+      },
+      signal: controller.signal,
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      let error: StytchError;
+      try {
+        error = JSON.parse(errorText);
+      } catch {
+        error = {
+          status_code: response.status,
+          error_type: "unknown",
+          error_message: errorText || `HTTP ${response.status}`,
+        };
+      }
+      throw new Error(
+        `Stytch API error: ${error.error_type} - ${error.error_message} (${error.status_code})`
+      );
+    }
+
+    const payload = await response.json();
+
+    try {
+      return schema.parse(payload);
+    } catch (err) {
+      console.error("Stytch response validation failed", err);
+      throw new Error("Invalid Stytch API response shape");
+    }
+  } finally {
+    clearTimeout(timeoutId);
+    if (externalSignal && externalAbortHandler) {
+      externalSignal.removeEventListener("abort", externalAbortHandler);
+    }
+  }
 }
 
 /**
@@ -153,13 +223,17 @@ export const stytchB2B = {
     name: string,
     slug: string
   ): Promise<StytchB2BOrganizationResponse> {
-    return stytchFetch<StytchB2BOrganizationResponse>("/b2b/organizations", {
-      method: "POST",
-      body: JSON.stringify({
-        organization_name: name,
-        organization_slug: slug,
-      }),
-    });
+    return stytchFetch(
+      "/b2b/organizations",
+      {
+        method: "POST",
+        body: JSON.stringify({
+          organization_name: name,
+          organization_slug: slug,
+        }),
+      },
+      StytchB2BOrganizationResponseSchema
+    );
   },
 
   /**
@@ -175,7 +249,7 @@ export const stytchB2B = {
     name?: string,
     roles?: string[]
   ): Promise<StytchB2BInviteResponse> {
-    return stytchFetch<StytchB2BInviteResponse>(
+    return stytchFetch(
       `/b2b/organizations/${organizationId}/members`,
       {
         method: "POST",
@@ -185,7 +259,8 @@ export const stytchB2B = {
           create_member_as_pending: true, // Require email acceptance before sign-in
           roles: roles || [], // Assign Stytch RBAC roles for API permissions
         }),
-      }
+      },
+      StytchB2BInviteResponseSchema
     );
   },
 
@@ -195,14 +270,15 @@ export const stytchB2B = {
   async authenticateSession(
     sessionJwt: string
   ): Promise<StytchB2BAuthenticateResponse> {
-    return stytchFetch<StytchB2BAuthenticateResponse>(
+    return stytchFetch(
       "/b2b/sessions/authenticate",
       {
         method: "POST",
         body: JSON.stringify({
           session_jwt: sessionJwt,
         }),
-      }
+      },
+      StytchB2BAuthenticateResponseSchema
     );
   },
 };
@@ -215,14 +291,15 @@ export const stytchConsumer = {
    * Send a magic link invite to a consumer
    */
   async sendMagicLink(email: string): Promise<StytchConsumerMagicLinkResponse> {
-    return stytchFetch<StytchConsumerMagicLinkResponse>(
+    return stytchFetch(
       "/consumers/magic_links/email/send",
       {
         method: "POST",
         body: JSON.stringify({
           email_address: email,
         }),
-      }
+      },
+      StytchConsumerMagicLinkResponseSchema
     );
   },
 
@@ -232,14 +309,15 @@ export const stytchConsumer = {
   async authenticateSession(
     sessionJwt: string
   ): Promise<StytchConsumerAuthenticateResponse> {
-    return stytchFetch<StytchConsumerAuthenticateResponse>(
+    return stytchFetch(
       "/consumers/sessions/authenticate",
       {
         method: "POST",
         body: JSON.stringify({
           session_jwt: sessionJwt,
         }),
-      }
+      },
+      StytchConsumerAuthenticateResponseSchema
     );
   },
 };
