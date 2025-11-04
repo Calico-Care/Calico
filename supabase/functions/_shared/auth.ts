@@ -1,5 +1,5 @@
-import { withConn } from "@/db.ts";
-import { stytchB2B } from "@/stytch.ts";
+import { withConn } from "./db.ts";
+import { stytchB2B } from "./stytch.ts";
 
 export interface StaffAuthResult {
   user_id: string;
@@ -7,6 +7,13 @@ export interface StaffAuthResult {
   role: 'org_admin' | 'clinician';
   email: string;
   stytch_member_id: string;
+}
+
+export class StaffAuthError extends Error {
+  constructor(message: string, public code: string) {
+    super(message);
+    this.name = "StaffAuthError";
+  }
 }
 
 /**
@@ -17,7 +24,7 @@ export async function authenticateStaff(sessionJwt: string): Promise<StaffAuthRe
   // Verify session with Stytch B2B API
   const authResponse = await stytchB2B.authenticateSession(sessionJwt);
   if (!authResponse.session || !authResponse.member || !authResponse.organization_id) {
-    throw new Error("Invalid session");
+    throw new StaffAuthError("Invalid session", "INVALID_SESSION");
   }
 
   const stytchUserId = authResponse.session.user_id;
@@ -34,7 +41,7 @@ export async function authenticateStaff(sessionJwt: string): Promise<StaffAuthRe
   });
 
   if (orgResult.rows.length === 0) {
-    throw new Error("Organization not found");
+    throw new StaffAuthError("Organization not found", "ORGANIZATION_NOT_FOUND");
   }
 
   const orgId = orgResult.rows[0].org_id;
@@ -73,7 +80,7 @@ export async function authenticateStaff(sessionJwt: string): Promise<StaffAuthRe
         );
 
         if (inviteResult.rows.length === 0) {
-          throw new Error("No pending staff invitation found");
+          throw new StaffAuthError("No pending staff invitation found", "NO_INVITATION");
         }
 
         role = inviteResult.rows[0].role as 'org_admin' | 'clinician';

@@ -1,8 +1,8 @@
-# Staff Authentication Edge Function
+# Staff Authentication Helper Function
 
 ## Overview
 
-The shared edge helper `authenticateStaff(sessionJwt)` in `supabase/functions/_shared/auth.ts` verifies a Stytch B2B staff session and synchronizes Calico's database state. It is designed for Expo clients (caregiver/admin apps) that have already completed Stytch B2B login and now need Calico tenant context.
+The shared helper function `authenticateStaff(sessionJwt)` in `supabase/functions/_shared/auth.ts` verifies a Stytch B2B staff session and synchronizes Calico's database state. It is designed to be called by edge functions or other server-side code that needs to authenticate staff users (org admins and clinicians) and synchronize their state with the database.
 
 ## Responsibilities
 
@@ -44,6 +44,58 @@ If the helper does not find a matching organization or pending invitation, it th
 
 ---
 
+# Staff Authentication Edge Function
+
+## Overview
+
+The `auth-verify-staff` edge function in `supabase/functions/auth-verify-staff/index.ts` is an HTTP endpoint that wraps the `authenticateStaff` helper function. It verifies a Stytch B2B staff session and synchronizes Calico's database state for staff users (org admins and clinicians). It is designed for Expo clients (caregiver/admin apps) that have already completed Stytch B2B login and now need Calico tenant context.
+
+## Responsibilities
+
+- **HTTP endpoint handling** – Accepts POST requests with `Authorization: Bearer <session_jwt>` header
+- **CORS support** – Handles CORS preflight requests and includes CORS headers in all responses
+- **Session verification** – Delegates to `authenticateStaff()` helper which:
+  - Verifies the Stytch B2B session JWT
+  - Maps Stytch organization to Calico `org_id`
+  - Synchronizes user and membership state
+  - Creates clinician profile when applicable
+- **Error handling** – Maps `StaffAuthError` codes to appropriate HTTP status codes:
+  - `INVALID_SESSION` → 401 Unauthorized
+  - `NO_INVITATION` → 404 Not Found
+  - `ORGANIZATION_NOT_FOUND` → 404 Not Found
+  - Unknown errors → 500 Internal Server Error
+
+## Return Value
+
+The function returns the same `StaffAuthResult` type as the `authenticateStaff` helper:
+
+```ts
+type StaffAuthResult = {
+  user_id: string;
+  org_id: string;
+  role: 'org_admin' | 'clinician';
+  email: string;
+  stytch_member_id: string;
+};
+```
+
+## Error Handling
+
+- **401 Unauthorized** – Missing or invalid Authorization header, or invalid session JWT (`INVALID_SESSION`)
+- **404 Not Found** – No pending staff invitation found (`NO_INVITATION`) or organization not found (`ORGANIZATION_NOT_FOUND`)
+- **500 Internal Server Error** – Stytch API errors, database errors, or other unexpected failures
+
+## Typical Usage Flow
+
+1. The mobile/web app receives a `session_jwt` from Stytch B2B after login.
+2. The app sends the JWT to the `auth-verify-staff` edge function with `Authorization: Bearer <session_jwt>` header.
+3. On success, the edge function returns the `StaffAuthResult`, which the client stores in its session context.
+4. The client can now call tenant-scoped APIs using the returned `org_id` and role-based capabilities.
+
+If the function does not find a matching organization or pending invitation, it returns an appropriate error status, which should be handled by prompting the user to contact support or retry the onboarding flow.
+
+---
+
 # Patient Authentication Edge Function
 
 ## Overview
@@ -70,22 +122,26 @@ The `auth-verify-consumer` edge function in `supabase/functions/auth-verify-cons
 ## Return Value
 
 ```ts
-type PatientAuthResult = 
+type AuthResponse =
   | {
+      kind: "single";
       user_id: string;
-      org_id: string;  // Single org
-      role: 'patient';
+      org_id: string;
+      org_ids?: never;
+      role: "patient";
       email: string;
     }
   | {
+      kind: "multi";
       user_id: string;
-      org_ids: string[];  // Multiple orgs
-      role: 'patient';
+      org_ids: string[];
+      org_id?: never;
+      role: "patient";
       email: string;
     };
 ```
 
-Clients use this payload to set tenancy context and pick the correct UI. For multi-org patients, the client should prompt the user to select which organization they want to access.
+Clients use this payload to set tenancy context and pick the correct UI. For multi-org patients, the client should prompt the user to select which organization they want to access. The discriminated union ensures exactly one variant is returned (either `kind: "single"` with `org_id` or `kind: "multi"` with `org_ids`).
 
 ## Error Handling
 
@@ -97,7 +153,7 @@ Clients use this payload to set tenancy context and pick the correct UI. For mul
 
 1. The mobile/web app receives a `session_jwt` from Stytch Consumer after login (magic link or password).
 2. The app sends the JWT to the `auth-verify-consumer` edge function with `Authorization: Bearer <session_jwt>` header.
-3. On success, the edge function returns the `PatientAuthResult`, which the client stores in its session context.
+3. On success, the edge function returns the `AuthResponse`, which the client stores in its session context.
 4. The client can now call tenant-scoped APIs using the returned `org_id` (or prompt for `org_ids` selection for multi-org patients).
 
 If the function does not find a pending invitation matching the user's email, it returns a 404 error, which should be handled by prompting the user to contact support or ensuring they were properly invited.

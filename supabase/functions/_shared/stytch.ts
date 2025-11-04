@@ -112,7 +112,7 @@ export type StytchConsumerSession = z.infer<
   typeof StytchConsumerSessionSchema
 >;
 
-const StytchConsumerEmailAddressSchema = z.object({
+export const StytchConsumerEmailAddressSchema = z.object({
   email_id: z.string(),
   email_address: z.string(),
   verified: z.boolean().optional(),
@@ -348,8 +348,27 @@ export const stytchConsumer = {
    * Retrieve a consumer user by id (used to pull email metadata)
    */
   async getUser(userId: string): Promise<StytchConsumerUserResponse> {
+    // Fast input validation
+    if (typeof userId !== "string") {
+      throw new Error("Invalid userId: must be a non-empty string");
+    }
+
+    const trimmedUserId = userId.trim();
+    if (trimmedUserId.length === 0) {
+      throw new Error("Invalid userId: must be a non-empty string");
+    }
+
+    // Validate UUID format (Stytch user IDs are UUIDs)
+    const uuidRegex =
+      /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+    if (!uuidRegex.test(trimmedUserId)) {
+      throw new Error(
+        `Invalid userId format: expected UUID format, got "${trimmedUserId}"`
+      );
+    }
+
     return stytchFetch(
-      `/consumers/users/${userId}`,
+      `/consumers/users/${trimmedUserId}`,
       {
         method: "GET",
       },

@@ -3,13 +3,23 @@ import { corsHeaders } from "@/cors.ts";
 import { withConn } from "@/db.ts";
 import { stytchConsumer } from "@/stytch.ts";
 
-interface AuthResponse {
-  user_id: string;
-  org_id?: string;
-  org_ids?: string[];
-  role: 'patient';
-  email: string;
-}
+type AuthResponse =
+  | {
+      kind: "single";
+      user_id: string;
+      org_id: string;
+      org_ids?: never;
+      role: "patient";
+      email: string;
+    }
+  | {
+      kind: "multi";
+      user_id: string;
+      org_ids: string[];
+      org_id?: never;
+      role: "patient";
+      email: string;
+    };
 
 serve(async (req: Request): Promise<Response> => {
   // Handle CORS preflight
@@ -67,7 +77,9 @@ serve(async (req: Request): Promise<Response> => {
             ?.email_address ?? stytchUser.user.email_addresses[0]?.email_address;
 
         if (!primaryEmail) {
-          throw new Error("No email address found for this Stytch user");
+          throw new Error(
+            "No email address found for Stytch user. User may not have completed email verification."
+          );
         }
 
         // User doesn't exist - look for pending invitation to get email
@@ -143,15 +155,33 @@ serve(async (req: Request): Promise<Response> => {
         }
 
 
-        return { user_id: userId, org_id: orgId, role: 'patient' as const, email };
+        return {
+          kind: "single",
+          user_id: userId,
+          org_id: orgId,
+          role: "patient" as const,
+          email,
+        };
       } else if (membershipResult.rows.length === 1) {
         // Single org membership
         const { org_id, role } = membershipResult.rows[0];
-        return { user_id: userId, org_id, role: role as 'patient', email };
+        return {
+          kind: "single",
+          user_id: userId,
+          org_id,
+          role: role as "patient",
+          email,
+        };
       } else {
         // Multi-org patient - return array of org_ids
-        const orgIds = membershipResult.rows.map(row => row.org_id);
-        return { user_id: userId, org_ids: orgIds, role: 'patient' as const, email };
+        const orgIds = membershipResult.rows.map((row) => row.org_id);
+        return {
+          kind: "multi",
+          user_id: userId,
+          org_ids: orgIds,
+          role: "patient" as const,
+          email,
+        };
       }
     });
 
