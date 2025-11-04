@@ -7,6 +7,7 @@ import { serve } from 'https://deno.land/std@0.224.0/http/server.ts';
 import type { PoolClient } from 'https://deno.land/x/postgres@v0.17.2/mod.ts';
 import { withConn } from '../_shared/db.ts';
 import { stytchB2B } from '../_shared/stytch.ts';
+import { corsHeaders } from '../_shared/cors.ts';
 
 const CALICO_OPS_TOKEN = Deno.env.get('CALICO_OPS_TOKEN');
 
@@ -15,10 +16,16 @@ if (!CALICO_OPS_TOKEN) throw new Error('Missing CALICO_OPS_TOKEN');
 const SLUG_RE = /^[a-z0-9._~-]{2,128}$/;
 
 serve(async (req: Request) => {
+  // Handle CORS preflight
+  if (req.method === 'OPTIONS') {
+    return new Response(null, { status: 200, headers: corsHeaders });
+  }
+
   try {
     if (req.method !== 'POST')
       return new Response('Method Not Allowed', {
         status: 405,
+        headers: corsHeaders,
       });
 
     const auth = req.headers.get('authorization') || '';
@@ -30,6 +37,7 @@ serve(async (req: Request) => {
         }),
         {
           status: 401,
+          headers: { ...corsHeaders, 'content-type': 'application/json' },
         }
       );
 
@@ -41,6 +49,7 @@ serve(async (req: Request) => {
         }),
         {
           status: 400,
+          headers: { ...corsHeaders, 'content-type': 'application/json' },
         }
       );
 
@@ -51,6 +60,7 @@ serve(async (req: Request) => {
         }),
         {
           status: 400,
+          headers: { ...corsHeaders, 'content-type': 'application/json' },
         }
       );
 
@@ -72,6 +82,7 @@ serve(async (req: Request) => {
       }),
       {
         headers: {
+          ...corsHeaders,
           'content-type': 'application/json',
         },
       }
@@ -84,6 +95,7 @@ serve(async (req: Request) => {
       }),
       {
         status: 500,
+        headers: { ...corsHeaders, 'content-type': 'application/json' },
       }
     );
   }

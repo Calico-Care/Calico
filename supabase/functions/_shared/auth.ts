@@ -189,6 +189,16 @@ export async function authenticateStaff(sessionJwt: string): Promise<StaffAuthRe
           "UPDATE memberships SET stytch_member_id = $1 WHERE org_id = $2 AND user_id = $3",
           [stytchMemberId, orgId, userId]
         );
+
+        // Ensure clinician row exists if role is clinician (handles edge cases)
+        if (role === 'clinician') {
+          await conn.queryObject(
+            `INSERT INTO clinicians (org_id, user_id)
+             VALUES ($1, $2)
+             ON CONFLICT (org_id, user_id) DO NOTHING`,
+            [orgId, userId]
+          );
+        }
       }
 
       await conn.queryObject("COMMIT");
@@ -365,6 +375,15 @@ export async function authenticateConsumer(sessionJwt: string): Promise<Consumer
     } else if (membershipResult.rows.length === 1) {
       // Single org membership
       const { org_id, role } = membershipResult.rows[0];
+      
+      // Ensure patient row exists (handles edge cases where membership exists but patient row is missing)
+      await conn.queryObject(
+        `INSERT INTO patients (org_id, user_id, legal_name, dob)
+         VALUES ($1, $2, NULL, NULL)
+         ON CONFLICT (org_id, user_id) DO NOTHING`,
+        [org_id, userId]
+      );
+      
       return {
         kind: "single" as const,
         user_id: userId,
@@ -373,8 +392,19 @@ export async function authenticateConsumer(sessionJwt: string): Promise<Consumer
         email,
       };
     } else {
-      // Multi-org patient - return array of org_ids
+      // Multi-org patient - ensure patient row exists for each org
       const orgIds = membershipResult.rows.map((row) => row.org_id);
+      
+      // Create patient rows for any orgs that don't have one yet
+      for (const orgId of orgIds) {
+        await conn.queryObject(
+          `INSERT INTO patients (org_id, user_id, legal_name, dob)
+           VALUES ($1, $2, NULL, NULL)
+           ON CONFLICT (org_id, user_id) DO NOTHING`,
+          [orgId, userId]
+        );
+      }
+      
       return {
         kind: "multi" as const,
         user_id: userId,
