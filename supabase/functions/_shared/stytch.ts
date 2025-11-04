@@ -112,6 +112,29 @@ export type StytchConsumerSession = z.infer<
   typeof StytchConsumerSessionSchema
 >;
 
+const StytchConsumerEmailAddressSchema = z.object({
+  email_id: z.string(),
+  email_address: z.string(),
+  verified: z.boolean().optional(),
+  primary: z.boolean().optional(),
+});
+export type StytchConsumerEmailAddress = z.infer<
+  typeof StytchConsumerEmailAddressSchema
+>;
+
+export const StytchConsumerUserSchema = z.object({
+  user_id: z.string(),
+  email_addresses: z.array(StytchConsumerEmailAddressSchema),
+});
+export type StytchConsumerUser = z.infer<typeof StytchConsumerUserSchema>;
+
+export const StytchConsumerUserResponseSchema = z.object({
+  user: StytchConsumerUserSchema,
+});
+export type StytchConsumerUserResponse = z.infer<
+  typeof StytchConsumerUserResponseSchema
+>;
+
 export const StytchConsumerAuthenticateResponseSchema = z.object({
   session: StytchConsumerSessionSchema.optional(),
   user_id: z.string().optional(),
@@ -318,6 +341,19 @@ export const stytchConsumer = {
         }),
       },
       StytchConsumerAuthenticateResponseSchema
+    );
+  },
+
+  /**
+   * Retrieve a consumer user by id (used to pull email metadata)
+   */
+  async getUser(userId: string): Promise<StytchConsumerUserResponse> {
+    return stytchFetch(
+      `/consumers/users/${userId}`,
+      {
+        method: "GET",
+      },
+      StytchConsumerUserResponseSchema
     );
   },
 };

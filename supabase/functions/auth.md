@@ -41,3 +41,63 @@ Clients use this payload to set tenancy context, pick the correct UI, and persis
 4. The client can now call tenant-scoped APIs using the returned `org_id` and role-based capabilities.
 
 If the helper does not find a matching organization or pending invitation, it throws an error, which should be handled by prompting the user to contact support or retry the onboarding flow.
+
+---
+
+# Patient Authentication Edge Function
+
+## Overview
+
+The `auth-verify-consumer` edge function in `supabase/functions/auth-verify-consumer/index.ts` verifies a Stytch Consumer session and synchronizes Calico's database state for patient users. It is designed for Expo clients (patient/family apps) that have already completed Stytch Consumer login (via magic link or password) and now need Calico tenant context.
+
+## Responsibilities
+
+- **Session verification** – Calls `stytchConsumer.authenticateSession` with the provided JWT and validates that a session and user_id were returned.
+- **User synchronization** – Creates or looks up a user record in `users` table by `stytch_user_id`. If the user doesn't exist, fetches their email from Stytch and creates the user record.
+- **Invitation handling** – For new users, looks up a pending patient invitation matching their email to determine which organization they belong to.
+- **Membership creation** – When a user first authenticates, runs a transaction that:
+  - Creates an active `memberships` row with role `'patient'`
+  - Creates a `patients` record (minimal initial data)
+  - Marks the pending invitation as `'accepted'`
+- **Multi-org support** – Returns a single `org_id` for patients with one organization, or `org_ids` array for patients belonging to multiple organizations.
+
+## Important Notes
+
+- The Stytch Consumer API's `authenticateSession` response does not include email addresses, so the function must call `stytchConsumer.getUser()` to fetch the user's email when creating a new user record.
+- The function requires a pending patient invitation in the `invitations` table matching the user's email address. If no invitation is found, it returns a 404 error.
+- All database operations run within a single connection transaction managed by `withConn` to ensure consistency.
+
+## Return Value
+
+```ts
+type PatientAuthResult = 
+  | {
+      user_id: string;
+      org_id: string;  // Single org
+      role: 'patient';
+      email: string;
+    }
+  | {
+      user_id: string;
+      org_ids: string[];  // Multiple orgs
+      role: 'patient';
+      email: string;
+    };
+```
+
+Clients use this payload to set tenancy context and pick the correct UI. For multi-org patients, the client should prompt the user to select which organization they want to access.
+
+## Error Handling
+
+- **401 Unauthorized** – Missing or invalid Authorization header, or invalid session JWT
+- **404 Not Found** – No pending patient invitation found for the user's email
+- **500 Internal Server Error** – Stytch API errors, database errors, or other unexpected failures
+
+## Typical Usage Flow
+
+1. The mobile/web app receives a `session_jwt` from Stytch Consumer after login (magic link or password).
+2. The app sends the JWT to the `auth-verify-consumer` edge function with `Authorization: Bearer <session_jwt>` header.
+3. On success, the edge function returns the `PatientAuthResult`, which the client stores in its session context.
+4. The client can now call tenant-scoped APIs using the returned `org_id` (or prompt for `org_ids` selection for multi-org patients).
+
+If the function does not find a pending invitation matching the user's email, it returns a 404 error, which should be handled by prompting the user to contact support or ensuring they were properly invited.
