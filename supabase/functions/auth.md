@@ -109,7 +109,7 @@ The `auth-verify-consumer` edge function in `supabase/functions/auth-verify-cons
 - **Invitation handling** – For new users, looks up a pending patient invitation matching their email to determine which organization they belong to.
 - **Membership creation** – When a user first authenticates, runs a transaction that:
   - Creates an active `memberships` row with role `'patient'`
-  - Creates a `patients` record (minimal initial data)
+  - Creates a `patients` record, pre-populating `legal_name` and `dob` from the invitation's `metadata` if provided by the clinician
   - Marks the pending invitation as `'accepted'`
 - **Multi-org support** – Returns a single `org_id` for patients with one organization, or `org_ids` array for patients belonging to multiple organizations.
 
@@ -117,6 +117,7 @@ The `auth-verify-consumer` edge function in `supabase/functions/auth-verify-cons
 
 - The Stytch Consumer API's `authenticateSession` response does not include email addresses, so the function must call `stytchConsumer.getUser()` to fetch the user's email when creating a new user record.
 - The function requires a pending patient invitation in the `invitations` table matching the user's email address. If no invitation is found, it returns a 404 error.
+- The function extracts `legal_name` and `dob` from the invitation's `metadata` JSONB field (if provided by the clinician during invitation) and uses them to pre-populate the patient record. If not provided, the patient record is created with `NULL` values, allowing patients to fill them in during onboarding.
 - All database operations run within a single connection transaction managed by `withConn` to ensure consistency.
 
 ## Return Value
@@ -178,6 +179,7 @@ The `patient-invite` edge function in `supabase/functions/patient-invite/index.t
   - `role` set to `'patient'`
   - `invited_by` set to the staff member's `user_id`
   - `status` set to `'pending'`
+  - `metadata` JSONB field containing optional `legal_name` and `dob` if provided by the clinician
 - **Magic link delivery** – After the database transaction commits successfully, sends a Stytch Consumer magic link email to the patient via `stytchConsumer.sendMagicLink()`
 - **Race condition handling** – Handles concurrent invitation requests gracefully by catching unique constraint violations from the partial unique index and returning the existing invitation ID
 - **Email failure handling** – If email delivery fails, the invitation record is preserved and a warning is returned, allowing retries without losing the invitation
@@ -210,12 +212,20 @@ This ensures idempotency and prevents 500 errors in high-concurrency scenarios. 
 // Request body
 type InviteRequest = {
   email: string;
+  legal_name?: string; // Optional: Patient legal name provided by clinician
+  dob?: string; // Optional: Patient date of birth (ISO 8601 format: YYYY-MM-DD)
 };
 
 // Headers
 Authorization: Bearer <staff_session_jwt>
 Content-Type: application/json
 ```
+
+**Patient Data Fields:**
+- `legal_name` – Optional patient legal name. If provided by the clinician during invitation, it will be pre-populated in the patient record when they sign up. Patients can verify or update this later.
+- `dob` – Optional patient date of birth in ISO 8601 format (`YYYY-MM-DD`). If provided by the clinician during invitation, it will be pre-populated in the patient record when they sign up. Patients can verify or update this later.
+
+If these fields are not provided, the patient record will be created with `NULL` values, and patients can fill them in during their onboarding flow.
 
 ## Return Value
 
@@ -231,7 +241,7 @@ The `invitation_id` can be used by clients to track invitation status or display
 
 ## Error Handling
 
-- **400 Bad Request** – Missing or invalid email field, or invalid email format
+- **400 Bad Request** – Missing or invalid email field, invalid email format, or invalid date of birth format (must be YYYY-MM-DD)
 - **401 Unauthorized** – Missing or invalid Authorization header, or invalid session JWT (`StaffAuthError` with code `INVALID_SESSION`)
 - **403 Forbidden** – Authenticated user does not have `clinician` or `org_admin` role
 - **405 Method Not Allowed** – Request method is not POST
@@ -244,7 +254,8 @@ The `invitation_id` can be used by clients to track invitation status or display
 - **Operation order** – The function creates the database invitation record **before** sending the magic link email. This ensures emails are only sent when a corresponding invitation record exists. The database operation runs within a transaction managed by `withTenant()`, and the email is only sent after the transaction commits successfully.
 - **Email failure handling** – If the Stytch Consumer API fails to send the magic link email, the invitation record remains committed in the database. The function returns HTTP 200 with a `warning` field, allowing callers to retry email delivery without losing the invitation. Email errors are logged but do not cause the function to fail.
 - **Race condition handling** – The partial unique index `inv_pending_once_per_role` on `invitations(org_id, email, role) WHERE status = 'pending'` ensures only one pending invitation exists per email per organization per role. Concurrent requests are handled by catching unique constraint violations and returning the existing invitation ID.
-- **Idempotency** – If a patient already has a pending invitation, subsequent invite requests return the existing invitation ID. If the previous invitation's email failed, callers can retry the invite to resend the magic link.
+- **Idempotency** – If a patient already has a pending invitation, subsequent invite requests return the existing invitation ID. If metadata (legal_name, dob) is provided in a subsequent invite, it will be merged into the existing invitation's metadata, allowing clinicians to update patient information. If the previous invitation's email failed, callers can retry the invite to resend the magic link.
+- **Patient data pre-population** – Optional `legal_name` and `dob` fields provided by clinicians during invitation are stored in the invitation's `metadata` JSONB field. When the patient authenticates via `auth-verify-consumer`, this data is used to pre-populate the patient record. If not provided, the patient record is created with `NULL` values, and patients can fill them in during onboarding.
 - **RLS and tenant isolation** – The function uses `withTenant()` to ensure all database operations respect Row Level Security (RLS) policies and tenant isolation.
 - **Error handling** – The function uses explicit `StaffAuthError` type checking with error code mapping for authentication-related errors, providing more reliable error handling than string matching.
 
@@ -254,7 +265,7 @@ The `invitation_id` can be used by clients to track invitation status or display
 2. The app displays a form to invite a patient, prompting for the patient's email address.
 3. The app sends a POST request to the `patient-invite` edge function with:
    - `Authorization: Bearer <staff_session_jwt>` header
-   - JSON body containing `{ "email": "patient@example.com" }`
+   - JSON body containing `{ "email": "patient@example.com" }` or optionally `{ "email": "patient@example.com", "legal_name": "John Doe", "dob": "1990-01-15" }`
 4. On success, the edge function:
    - Creates (or retrieves) a pending invitation record within a database transaction
    - Commits the transaction
@@ -274,6 +285,122 @@ The function creates records in the `invitations` table with the following struc
 - `role` – Always `'patient'` for this function
 - `invited_by` – UUID reference to the staff member's `user_id`
 - `status` – Always `'pending'` initially (updated to `'accepted'` by `auth-verify-consumer`)
+- `metadata` – JSONB field containing optional patient data (`legal_name`, `dob`) provided by the clinician
 - `created_at` – Timestamp of invitation creation
 
-The invitation is marked as `'accepted'` when the patient authenticates via `auth-verify-consumer` and creates their membership.
+The invitation is marked as `'accepted'` when the patient authenticates via `auth-verify-consumer` and creates their membership. At that time, any `legal_name` and `dob` values from the invitation metadata are used to populate the `patients` table record. If these fields are not provided, the patient record is created with `NULL` values, allowing patients to fill them in later during onboarding.
+
+---
+
+# Staff Admin Invitation Edge Function
+
+## Overview
+
+The `staff-invite-admin` edge function in `supabase/functions/staff-invite-admin/index.ts` allows Calico operations staff to invite organization administrators to a Stytch B2B organization. It is a server-to-server function designed for internal Calico operations workflows where new organizations need their first admin user invited.
+
+## Responsibilities
+
+- **HTTP endpoint handling** – Accepts POST requests with `Authorization: Bearer <CALICO_OPS_TOKEN>` header and JSON body containing organization and admin details
+- **Calico ops authentication** – Verifies the request is authorized using `CALICO_OPS_TOKEN` environment variable
+- **Organization lookup** – Resolves the organization's Stytch organization ID using the `admin.get_organization()` SECURITY DEFINER function
+- **Email validation** – Validates email format using a basic regex pattern
+- **Stytch B2B invitation** – Invites the admin to the Stytch B2B organization via `stytchB2B.inviteMember()` with the `stytch_admin` role, enabling them to invite clinicians
+- **Invitation record creation** – Creates a pending invitation record in the `invitations` table (within a transaction) with:
+  - `org_id` from the request
+  - `email` of the org admin being invited
+  - `role` set to `'org_admin'`
+  - `stytch_invitation_id` set to the Stytch member ID returned from the invite
+  - `status` set to `'pending'`
+  - `invited_by` set to `NULL` (Calico ops operation, not tied to a specific user)
+
+## Operation Order and Transaction Safety
+
+The function follows a strict operation order to ensure data consistency:
+
+1. **Organization lookup** – Verifies the organization exists and has a Stytch mapping
+2. **Stytch invitation** – Invites the admin to Stytch B2B organization first
+3. **Database operation** – Creates the invitation record within a transaction managed by `withTenant()`
+4. **Transaction commits** – Once the database operation succeeds and the transaction commits
+
+This ordering ensures that Stytch invitations are only created when the organization exists, and database records are only created when the Stytch invitation succeeds.
+
+## Request Format
+
+```ts
+// Request body
+type InviteRequest = {
+  org_id: string; // UUID of the Calico organization
+  email: string; // Email address of the org admin to invite
+  name?: string; // Optional: Name of the org admin
+};
+
+// Headers
+Authorization: Bearer <CALICO_OPS_TOKEN>
+Content-Type: application/json
+```
+
+**Admin Fields:**
+- `name` – Optional org admin name. If provided, it will be set in Stytch B2B for the member.
+
+## Return Value
+
+```ts
+type InviteResponse = {
+  ok: true;
+  invitation_id: string; // UUID of the created invitation record
+  stytch_invitation_id: string; // Stytch member ID (same as member_id from Stytch response)
+  email: string; // Email address of the invited admin
+};
+```
+
+The `invitation_id` can be used by Calico ops tools to track invitation status. The `stytch_invitation_id` is the Stytch member ID, which can be used for future Stytch API operations.
+
+## Error Handling
+
+- **400 Bad Request** – Missing or invalid `org_id` or `email` field, or invalid email format
+- **401 Unauthorized** – Missing or invalid Authorization header, or token does not match `CALICO_OPS_TOKEN`
+- **404 Not Found** – Organization not found (no matching `org_id` in database)
+- **405 Method Not Allowed** – Request method is not POST
+- **500 Internal Server Error** – Organization missing Stytch mapping, Stytch API errors (e.g., duplicate member email), database errors, or other unexpected failures
+
+**Note**: Stytch API errors (such as `duplicate_member_email`) are returned as 500 errors with the Stytch error message in the response body. Callers should handle these appropriately, as they indicate the email is already a member of the organization.
+
+## Important Notes
+
+- **Calico ops only** – This function is restricted to Calico operations staff via `CALICO_OPS_TOKEN`. It should not be exposed to end users or client applications.
+- **Stytch admin role** – The invited admin receives the `stytch_admin` role in Stytch B2B, which allows them to invite clinicians via the `staff-invite-clinician` function.
+- **Organization lookup** – Uses `admin.get_organization()` SECURITY DEFINER function to bypass RLS and look up organization details. This function must exist and be accessible to the database user.
+- **Stytch invitation first** – The function invites the admin to Stytch B2B **before** creating the database record. If the Stytch invitation fails (e.g., duplicate email), no database record is created.
+- **RLS and tenant isolation** – The invitation record creation uses `withTenant()` to ensure all database operations respect Row Level Security (RLS) policies and tenant isolation.
+- **No CORS support** – This is a server-to-server function, so it does not handle CORS preflight requests. OPTIONS requests return 405 Method Not Allowed.
+- **Transaction safety** – The invitation record creation runs within a transaction managed by `withTenant()`, ensuring atomicity.
+
+## Typical Usage Flow
+
+1. Calico operations staff needs to invite the first admin for a new organization.
+2. The ops tool sends a POST request to the `staff-invite-admin` edge function with:
+   - `Authorization: Bearer <CALICO_OPS_TOKEN>` header
+   - JSON body containing `{ "org_id": "...", "email": "admin@example.com", "name": "Admin Name" }`
+3. On success, the edge function:
+   - Verifies the organization exists and has a Stytch mapping
+   - Invites the admin to Stytch B2B organization with `stytch_admin` role
+   - Creates a pending invitation record in the database
+   - Returns `{ "ok": true, "invitation_id": "...", "stytch_invitation_id": "...", "email": "admin@example.com" }`
+4. The admin receives an invitation email from Stytch B2B.
+5. The admin clicks the invitation link and completes Stytch B2B authentication.
+6. After authentication, the admin's app calls `auth-verify-staff` which matches the invitation and creates the admin's membership.
+
+## Database Schema
+
+The function creates records in the `invitations` table with the following structure:
+
+- `id` – UUID primary key (generated)
+- `org_id` – UUID reference to the organization (from request)
+- `email` – CITEXT email address of the org admin
+- `role` – Always `'org_admin'` for this function
+- `stytch_invitation_id` – Stytch member ID returned from the B2B invite
+- `invited_by` – Always `NULL` for this function (Calico ops operation)
+- `status` – Always `'pending'` initially (updated to `'accepted'` by `auth-verify-staff`)
+- `created_at` – Timestamp of invitation creation
+
+The invitation is marked as `'accepted'` when the admin authenticates via `auth-verify-staff` and creates their membership. At that time, the admin's membership record is created with role `'org_admin'`, granting them permission to invite clinicians.

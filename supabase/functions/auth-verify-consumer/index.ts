@@ -112,9 +112,13 @@ serve(async (req: Request): Promise<Response> => {
       );
 
       if (membershipResult.rows.length === 0) {
-        // No membership - look for pending invitation
-        const inviteResult = await conn.queryObject<{ org_id: string; id: string }>(
-          "SELECT org_id, id FROM invitations WHERE email = $1 AND role = 'patient' AND status = 'pending'",
+        // No membership - look for pending invitation and extract metadata
+        const inviteResult = await conn.queryObject<{
+          org_id: string;
+          id: string;
+          metadata: Record<string, unknown> | null;
+        }>(
+          "SELECT org_id, id, metadata FROM invitations WHERE email = $1 AND role = 'patient' AND status = 'pending'",
           [email]
         );
 
@@ -124,7 +128,11 @@ serve(async (req: Request): Promise<Response> => {
 
         const orgId = inviteResult.rows[0].org_id;
         const invitationId = inviteResult.rows[0].id;
+        const metadata = inviteResult.rows[0].metadata || {};
 
+        // Extract patient data from invitation metadata (provided by clinician during invitation)
+        const legalName = typeof metadata.legal_name === "string" ? metadata.legal_name : null;
+        const dob = typeof metadata.dob === "string" ? metadata.dob : null;
 
         // Begin transaction
         try {
@@ -136,10 +144,13 @@ serve(async (req: Request): Promise<Response> => {
             [orgId, userId]
           );
 
-          // Create patient record (minimal initial data)
+          // Create patient record with data from invitation metadata (if provided)
+          // legal_name and dob are now nullable, allowing creation without them
+          // Patients can fill these in later during onboarding
           await conn.queryObject(
-            "INSERT INTO patients (org_id, user_id) VALUES ($1, $2)",
-            [orgId, userId]
+            `INSERT INTO patients (org_id, user_id, legal_name, dob)
+             VALUES ($1, $2, $3, $4)`,
+            [orgId, userId, legalName, dob]
           );
 
           // Mark invitation as accepted
