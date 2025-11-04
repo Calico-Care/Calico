@@ -27,6 +27,14 @@ serve(async (req: Request): Promise<Response> => {
     return new Response(null, { status: 200, headers: corsHeaders });
   }
 
+  // Validate HTTP method
+  if (req.method !== "POST") {
+    return new Response("Method Not Allowed", {
+      status: 405,
+      headers: corsHeaders,
+    });
+  }
+
   try {
     // Extract session JWT from Authorization header
     const authHeader = req.headers.get("Authorization");
@@ -43,7 +51,24 @@ serve(async (req: Request): Promise<Response> => {
     const sessionJwt = authHeader.substring(7); // Remove "Bearer " prefix
 
     // Verify session with Stytch Consumer API
-    const authResponse = await stytchConsumer.authenticateSession(sessionJwt);
+    let authResponse: Awaited<ReturnType<typeof stytchConsumer.authenticateSession>>;
+    try {
+      authResponse = await stytchConsumer.authenticateSession(sessionJwt);
+    } catch (error) {
+      // Catch Stytch API errors (invalid token, expired session, etc.)
+      if (error instanceof Error && error.message.includes("Stytch API error")) {
+        return new Response(
+          JSON.stringify({ error: "Invalid session" }),
+          {
+            status: 401,
+            headers: { ...corsHeaders, "Content-Type": "application/json" },
+          }
+        );
+      }
+      // Re-throw other errors
+      throw error;
+    }
+    
     if (!authResponse.session || !authResponse.user_id) {
       return new Response(
         JSON.stringify({ error: "Invalid session" }),
@@ -210,9 +235,25 @@ serve(async (req: Request): Promise<Response> => {
       if (error.message.includes("No pending patient invitation")) {
         status = 404;
         message = error.message;
-      } else if (error.message.includes("Invalid session")) {
-        status = 401;
-        message = "Invalid session";
+      } else if (
+        error.message.includes("Invalid session") ||
+        error.message.includes("Stytch API error")
+      ) {
+        const lowerMessage = error.message.toLowerCase();
+        // Check for authentication-related errors
+        // Format: "Stytch API error: {error_type} - {error_message} ({status_code})"
+        if (
+          lowerMessage.includes("invalid_session") ||
+          lowerMessage.includes("unauthorized_credentials") ||
+          lowerMessage.includes("unauthorized") ||
+          lowerMessage.includes("(401)") ||
+          lowerMessage.includes("(403)") ||
+          lowerMessage.includes("session_not_found") ||
+          lowerMessage.includes("intermediate_session_not_found")
+        ) {
+          status = 401;
+          message = "Invalid session";
+        }
       }
     }
 

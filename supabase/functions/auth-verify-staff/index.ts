@@ -8,6 +8,14 @@ serve(async (req: Request): Promise<Response> => {
     return new Response(null, { status: 200, headers: corsHeaders });
   }
 
+  // Validate HTTP method
+  if (req.method !== "POST") {
+    return new Response("Method Not Allowed", {
+      status: 405,
+      headers: corsHeaders,
+    });
+  }
+
   try {
     // Extract session JWT from Authorization header
     const authHeader = req.headers.get("Authorization");
@@ -53,6 +61,26 @@ serve(async (req: Request): Promise<Response> => {
         default:
           // Unknown error code, keep default 500
           message = error.message;
+      }
+    } else if (error instanceof Error) {
+      // Catch Stytch API errors (e.g., invalid token, expired session)
+      // These are thrown as generic Errors from stytchFetch
+      // Format: "Stytch API error: {error_type} - {error_message} ({status_code})"
+      if (error.message.includes("Stytch API error")) {
+        const lowerMessage = error.message.toLowerCase();
+        // Check for authentication-related errors
+        if (
+          lowerMessage.includes("invalid_session") ||
+          lowerMessage.includes("unauthorized_credentials") ||
+          lowerMessage.includes("unauthorized") ||
+          lowerMessage.includes("(401)") ||
+          lowerMessage.includes("(403)") ||
+          lowerMessage.includes("session_not_found") ||
+          lowerMessage.includes("intermediate_session_not_found")
+        ) {
+          status = 401;
+          message = "Invalid session";
+        }
       }
     }
 

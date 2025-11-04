@@ -22,7 +22,19 @@ export class StaffAuthError extends Error {
  */
 export async function authenticateStaff(sessionJwt: string): Promise<StaffAuthResult> {
   // Verify session with Stytch B2B API
-  const authResponse = await stytchB2B.authenticateSession(sessionJwt);
+  let authResponse: Awaited<ReturnType<typeof stytchB2B.authenticateSession>>;
+  try {
+    authResponse = await stytchB2B.authenticateSession(sessionJwt);
+  } catch (error) {
+    // Catch Stytch API errors (invalid token, expired session, etc.)
+    // and convert them to StaffAuthError for consistent error handling
+    if (error instanceof Error && error.message.includes("Stytch API error")) {
+      throw new StaffAuthError("Invalid session", "INVALID_SESSION");
+    }
+    // Re-throw other errors as-is
+    throw error;
+  }
+  
   if (!authResponse.session || !authResponse.member || !authResponse.organization_id) {
     throw new StaffAuthError("Invalid session", "INVALID_SESSION");
   }
