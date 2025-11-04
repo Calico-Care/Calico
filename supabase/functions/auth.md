@@ -555,3 +555,100 @@ The function creates records in the `invitations` table with the following struc
 - `created_at` – Timestamp of invitation creation
 
 The invitation is marked as `'accepted'` when the clinician authenticates via `auth-verify-staff` and creates their membership. At that time, the clinician's membership record is created with role `'clinician'`, and a `clinicians` profile record is created with the organization and user information.
+
+---
+
+# Admin List Invitations Edge Function
+
+## Overview
+
+The `admin-list-invitations` edge function in `supabase/functions/admin-list-invitations/index.ts` allows organization administrators to list staff invitations (org_admin and clinician) for their organization. **Patient invitations are excluded for HIPAA compliance** - patient email addresses contain PHI and should not be accessible to org admins. It is designed for Expo clients (caregiver/admin apps) where org admins need to view and track staff invitation status.
+
+## Responsibilities
+
+- **HTTP endpoint handling** – Accepts GET requests with `Authorization: Bearer <session_jwt>` header
+- **CORS support** – Handles CORS preflight requests and includes CORS headers in all responses
+- **Staff authentication** – Verifies the staff session JWT using `authenticateStaff()` helper and enforces role-based access control (requires `org_admin` role)
+- **Invitation listing** – Queries staff invitations (`org_admin`, `clinician`) for the authenticated admin's organization, ordered by creation date (newest first)
+- **HIPAA compliance** – Excludes patient invitations to prevent unauthorized access to PHI (patient email addresses)
+- **Tenant isolation** – Uses `withTenant()` with the admin's `user_id` to ensure all database operations respect Row Level Security (RLS) policies and tenant isolation
+
+## Request Format
+
+```ts
+// Request body: None (GET request)
+
+// Headers
+Authorization: Bearer <staff_session_jwt> // Must be org_admin session
+Content-Type: application/json (optional, for response)
+```
+
+## Return Value
+
+```ts
+type ListResponse = {
+  invitations: Invitation[];
+};
+
+type Invitation = {
+  id: string; // UUID of the invitation
+  email: string; // Email address of the invited user
+  role: string; // 'org_admin' | 'clinician' (patient invitations excluded for HIPAA compliance)
+  status: string; // 'pending' | 'accepted' | 'revoked' | 'expired'
+  invited_by: string | null; // UUID of the user who sent the invitation (null for Calico ops invites)
+  created_at: string; // ISO timestamp of invitation creation
+  stytch_invitation_id?: string | null; // Stytch member ID (for staff invites)
+};
+```
+
+The response includes only staff invitations (`org_admin`, `clinician`) for the organization. Patient invitations are excluded to comply with HIPAA's Minimum Necessary rule, as patient email addresses contain PHI and org admins typically do not have a legitimate need to access them. Clients can filter or group these invitations by role, status, or other criteria as needed.
+
+## Error Handling
+
+- **401 Unauthorized** – Missing or invalid Authorization header, invalid session JWT (`StaffAuthError` with code `INVALID_SESSION`), or Stytch API authentication errors (detected via `isStytchAuthError()` utility)
+- **403 Forbidden** – Authenticated user does not have `org_admin` role
+- **404 Not Found** – Organization not found (`StaffAuthError` with code `ORGANIZATION_NOT_FOUND`)
+- **405 Method Not Allowed** – Request method is not GET
+- **500 Internal Server Error** – Database errors, authentication state errors (`StaffAuthError` with codes `NO_INVITATION`), or other unexpected failures
+
+**Note**: The function uses explicit `StaffAuthError` type checking with error code mapping for reliable error handling. Stytch API errors are detected via `isStytchAuthError()` utility and returned as 401 Unauthorized.
+
+## Important Notes
+
+- **Org admin only** – This function is restricted to organization administrators (`org_admin` role). Clinicians cannot list invitations.
+- **HIPAA compliance** – Patient invitations are excluded from the response to comply with HIPAA's Minimum Necessary rule. Patient email addresses contain PHI and org admins (typically IT/administrative staff) do not have a legitimate need to access them. If patient invitation management is needed, it should be handled by clinicians through separate endpoints with proper PHI access controls.
+- **Staff invitations only** – The function returns only staff invitations (`org_admin`, `clinician`) within the organization. Clients can filter or group by role and status as needed.
+- **Tenant-scoped** – All invitations returned are scoped to the authenticated admin's organization. The function uses `withTenant()` to enforce RLS and ensure data isolation.
+- **All statuses included** – The function returns invitations with all statuses (`pending`, `accepted`, `revoked`, `expired`). Clients can filter by status as needed.
+- **Ordered by creation date** – Invitations are returned in descending order by `created_at` (newest first), making it easy to see recent invitations first.
+- **Nullable fields** – The `invited_by` field can be `null` for invitations created by Calico ops staff (e.g., initial org admin invites). The `stytch_invitation_id` field contains the Stytch member ID for staff invites.
+- **RLS and tenant isolation** – The function uses `withTenant()` with the admin's `user_id` to ensure all database operations respect Row Level Security (RLS) policies and tenant isolation.
+- **Error handling** – The function uses explicit `StaffAuthError` and `isStytchAuthError()` type checking for reliable error handling, avoiding fragile string matching.
+
+## Typical Usage Flow
+
+1. An org admin logs into the caregiver/admin app using Stytch B2B authentication.
+2. The app displays an invitations management page or dashboard.
+3. The app sends a GET request to the `admin-list-invitations` edge function with:
+   - `Authorization: Bearer <admin_session_jwt>` header
+4. On success, the edge function:
+   - Verifies the admin's session and enforces `org_admin` role
+   - Queries staff invitations (`org_admin`, `clinician`) for the organization (within tenant context)
+   - Excludes patient invitations for HIPAA compliance
+   - Returns `{ "invitations": [...] }` with invitations ordered by creation date (newest first)
+5. The client can filter, group, or display these invitations by role, status, or other criteria as needed.
+
+## Database Schema
+
+The function queries records from the `invitations` table with the following structure:
+
+- `id` – UUID primary key
+- `org_id` – UUID reference to the organization (filtered by authenticated admin's org)
+- `email` – CITEXT email address of the invited user
+- `role` – `'org_admin'` | `'clinician'` (patient invitations excluded for HIPAA compliance)
+- `status` – `'pending'` | `'accepted'` | `'revoked'` | `'expired'`
+- `invited_by` – UUID reference to the user who sent the invitation (can be NULL for Calico ops invites)
+- `stytch_invitation_id` – Stytch member ID for staff invites
+- `created_at` – Timestamp of invitation creation (used for ordering)
+
+The function returns only staff invitations for the organization, allowing admins to track staff invitation status, see who invited whom, and monitor the organization's staff invitation history. Patient invitations are excluded to comply with HIPAA's Minimum Necessary rule.
