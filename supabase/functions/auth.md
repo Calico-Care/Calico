@@ -4,6 +4,8 @@
 
 The shared helper function `authenticateStaff(sessionJwt)` in `supabase/functions/_shared/auth.ts` verifies a Stytch B2B staff session and synchronizes Calico's database state. It is designed to be called by edge functions or other server-side code that needs to authenticate staff users (org admins and clinicians) and synchronize their state with the database.
 
+The same file also exports the `isStytchAuthError(error: Error): boolean` utility function, which detects Stytch API authentication errors by checking error messages for common authentication-related error patterns (invalid_session, unauthorized_credentials, session_not_found, etc.). This utility is used by both `auth-verify-staff` and `auth-verify-consumer` to consistently handle Stytch authentication errors and return appropriate HTTP status codes.
+
 ## Responsibilities
 
 - **Session verification** – Calls `stytchB2B.authenticateSession` with the provided JWT and validates that a member, session, and organization were returned.
@@ -63,6 +65,7 @@ The `auth-verify-staff` edge function in `supabase/functions/auth-verify-staff/i
   - `INVALID_SESSION` → 401 Unauthorized
   - `NO_INVITATION` → 404 Not Found
   - `ORGANIZATION_NOT_FOUND` → 404 Not Found
+  - Stytch API authentication errors (detected via `isStytchAuthError()` utility) → 401 Unauthorized
   - Unknown errors → 500 Internal Server Error
 
 ## Return Value
@@ -81,9 +84,9 @@ type StaffAuthResult = {
 
 ## Error Handling
 
-- **401 Unauthorized** – Missing or invalid Authorization header, or invalid session JWT (`INVALID_SESSION`)
+- **401 Unauthorized** – Missing or invalid Authorization header, invalid session JWT (`INVALID_SESSION`), or Stytch API authentication errors (detected via `isStytchAuthError()` utility)
 - **404 Not Found** – No pending staff invitation found (`NO_INVITATION`) or organization not found (`ORGANIZATION_NOT_FOUND`)
-- **500 Internal Server Error** – Stytch API errors, database errors, or other unexpected failures
+- **500 Internal Server Error** – Database errors or other unexpected failures
 
 ## Typical Usage Flow
 
@@ -146,9 +149,9 @@ Clients use this payload to set tenancy context and pick the correct UI. For mul
 
 ## Error Handling
 
-- **401 Unauthorized** – Missing or invalid Authorization header, or invalid session JWT
+- **401 Unauthorized** – Missing or invalid Authorization header, invalid session JWT, or Stytch API authentication errors (detected via `isStytchAuthError()` utility)
 - **404 Not Found** – No pending patient invitation found for the user's email
-- **500 Internal Server Error** – Stytch API errors, database errors, or other unexpected failures
+- **500 Internal Server Error** – Database errors or other unexpected failures
 
 ## Typical Usage Flow
 
@@ -199,10 +202,11 @@ This ordering prevents sending emails when database operations fail, ensuring pa
 
 The function uses a transactional pattern to prevent race conditions when multiple staff members attempt to invite the same patient simultaneously:
 
-1. Attempts to INSERT a new invitation record within the transaction
+1. Attempts to INSERT a new invitation record within the transaction (including metadata if provided)
 2. If a unique constraint violation occurs (from the partial unique index `inv_pending_once_per_role`), catches the error
-3. Queries for the existing pending invitation and returns its ID
-4. Both concurrent requests return the same `invitation_id` without errors
+3. If metadata was provided in the request, attempts to UPDATE the existing invitation's metadata by merging the new metadata with the existing metadata using PostgreSQL's JSONB merge operator (`||`)
+4. If no metadata was provided or the update fails, queries for the existing pending invitation and returns its ID
+5. Both concurrent requests return the same `invitation_id` without errors
 
 This ensures idempotency and prevents 500 errors in high-concurrency scenarios. Note that PostgreSQL's `ON CONFLICT` clause doesn't directly support partial unique indexes, so the function uses try/catch error handling for race condition detection.
 
@@ -254,7 +258,7 @@ The `invitation_id` can be used by clients to track invitation status or display
 - **Operation order** – The function creates the database invitation record **before** sending the magic link email. This ensures emails are only sent when a corresponding invitation record exists. The database operation runs within a transaction managed by `withTenant()`, and the email is only sent after the transaction commits successfully.
 - **Email failure handling** – If the Stytch Consumer API fails to send the magic link email, the invitation record remains committed in the database. The function returns HTTP 200 with a `warning` field, allowing callers to retry email delivery without losing the invitation. Email errors are logged but do not cause the function to fail.
 - **Race condition handling** – The partial unique index `inv_pending_once_per_role` on `invitations(org_id, email, role) WHERE status = 'pending'` ensures only one pending invitation exists per email per organization per role. Concurrent requests are handled by catching unique constraint violations and returning the existing invitation ID.
-- **Idempotency** – If a patient already has a pending invitation, subsequent invite requests return the existing invitation ID. If metadata (legal_name, dob) is provided in a subsequent invite, it will be merged into the existing invitation's metadata, allowing clinicians to update patient information. If the previous invitation's email failed, callers can retry the invite to resend the magic link.
+- **Idempotency** – If a patient already has a pending invitation, subsequent invite requests return the existing invitation ID. If metadata (`legal_name`, `dob`) is provided in a subsequent invite, it will be merged into the existing invitation's metadata using PostgreSQL's JSONB merge operator (`||`), allowing clinicians to update patient information. New metadata fields are added, and existing fields are updated with new values. If the previous invitation's email failed, callers can retry the invite to resend the magic link.
 - **Patient data pre-population** – Optional `legal_name` and `dob` fields provided by clinicians during invitation are stored in the invitation's `metadata` JSONB field. When the patient authenticates via `auth-verify-consumer`, this data is used to pre-populate the patient record. If not provided, the patient record is created with `NULL` values, and patients can fill them in during onboarding.
 - **RLS and tenant isolation** – The function uses `withTenant()` to ensure all database operations respect Row Level Security (RLS) policies and tenant isolation.
 - **Error handling** – The function uses explicit `StaffAuthError` type checking with error code mapping for authentication-related errors, providing more reliable error handling than string matching.

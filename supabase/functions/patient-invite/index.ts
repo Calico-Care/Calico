@@ -5,6 +5,8 @@ import { stytchConsumer } from "@/stytch.ts";
 
 interface InviteRequest {
   email: string;
+  legal_name?: string; // Optional: Patient legal name provided by clinician
+  dob?: string; // Optional: Patient date of birth (ISO 8601 format: YYYY-MM-DD)
 }
 
 
@@ -59,7 +61,7 @@ export async function handler(req: Request): Promise<Response> {
 
     // Parse request body
     const body: InviteRequest = await req.json();
-    const { email } = body;
+    const { email, legal_name, dob } = body;
 
     if (!email || typeof email !== "string") {
       return new Response(
@@ -83,6 +85,40 @@ export async function handler(req: Request): Promise<Response> {
       );
     }
 
+    // Validate date of birth format if provided (ISO 8601: YYYY-MM-DD)
+    if (dob !== undefined && dob !== null) {
+      if (typeof dob !== "string") {
+        return new Response(
+          JSON.stringify({ error: "Invalid date of birth format" }),
+          {
+            status: 400,
+            headers: { ...corsHeaders, "Content-Type": "application/json" },
+          }
+        );
+      }
+      const dobRegex = /^\d{4}-\d{2}-\d{2}$/;
+      if (!dobRegex.test(dob)) {
+        return new Response(
+          JSON.stringify({ error: "Date of birth must be in YYYY-MM-DD format" }),
+          {
+            status: 400,
+            headers: { ...corsHeaders, "Content-Type": "application/json" },
+          }
+        );
+      }
+      // Validate it's a valid date
+      const dateObj = new Date(dob);
+      if (isNaN(dateObj.getTime()) || dateObj.toISOString().split('T')[0] !== dob) {
+        return new Response(
+          JSON.stringify({ error: "Invalid date of birth" }),
+          {
+            status: 400,
+            headers: { ...corsHeaders, "Content-Type": "application/json" },
+          }
+        );
+      }
+    }
+
     // Create invitation record using tenant context
     // This must succeed before sending the magic link email to avoid sending emails
     // when database operations fail. The transaction ensures atomicity.
@@ -91,12 +127,21 @@ export async function handler(req: Request): Promise<Response> {
       // The partial unique index inv_pending_once_per_role on (org_id, email, role) WHERE status = 'pending'
       // prevents duplicate pending invitations. PostgreSQL's ON CONFLICT doesn't support partial indexes,
       // so we catch unique violations and query for the existing row.
+      // Store optional patient data (legal_name, dob) in metadata JSONB field
+      const metadata: Record<string, unknown> = {};
+      if (legal_name !== undefined && legal_name !== null) {
+        metadata.legal_name = legal_name;
+      }
+      if (dob !== undefined && dob !== null) {
+        metadata.dob = dob;
+      }
+
       try {
         const inviteResult = await conn.queryObject<{ invitation_id: string }>(
-          `INSERT INTO invitations (org_id, email, role, invited_by, status)
-           VALUES ($1, $2, 'patient', $3, 'pending')
+          `INSERT INTO invitations (org_id, email, role, invited_by, status, metadata)
+           VALUES ($1, $2, 'patient', $3, 'pending', $4::jsonb)
            RETURNING id as invitation_id`,
-          [authResult.org_id, email, authResult.user_id]
+          [authResult.org_id, email, authResult.user_id, JSON.stringify(metadata)]
         );
 
         if (inviteResult.rows && inviteResult.rows.length > 0) {
@@ -110,6 +155,25 @@ export async function handler(req: Request): Promise<Response> {
             error.message.includes("duplicate") ||
             error.message.includes("23505"))
         ) {
+          // If metadata was provided, try to update existing invitation with new data
+          // This allows clinicians to update patient info if inviting again
+          if (Object.keys(metadata).length > 0) {
+            try {
+              const updateResult = await conn.queryObject<{ invitation_id: string }>(
+                `UPDATE invitations
+                 SET metadata = COALESCE(metadata, '{}'::jsonb) || $3::jsonb
+                 WHERE org_id = $1 AND email = $2 AND role = 'patient' AND status = 'pending'
+                 RETURNING id as invitation_id`,
+                [authResult.org_id, email, JSON.stringify(metadata)]
+              );
+              if (updateResult.rows && updateResult.rows.length > 0) {
+                return { invitation_id: updateResult.rows[0].invitation_id };
+              }
+            } catch {
+              // If update fails, fall through to returning existing invitation
+            }
+          }
+
           const existingInvite = await conn.queryObject<{ invitation_id: string }>(
             "SELECT id as invitation_id FROM invitations WHERE org_id = $1 AND email = $2 AND role = 'patient' AND status = 'pending'",
             [authResult.org_id, email]

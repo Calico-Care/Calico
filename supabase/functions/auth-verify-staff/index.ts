@@ -1,6 +1,6 @@
 import { serve } from "https://deno.land/std@0.224.0/http/server.ts";
 import { corsHeaders } from "@/cors.ts";
-import { authenticateStaff, StaffAuthError } from "@/auth.ts";
+import { authenticateStaff, StaffAuthError, isStytchAuthError } from "@/auth.ts";
 
 serve(async (req: Request): Promise<Response> => {
   // Handle CORS preflight
@@ -65,22 +65,9 @@ serve(async (req: Request): Promise<Response> => {
     } else if (error instanceof Error) {
       // Catch Stytch API errors (e.g., invalid token, expired session)
       // These are thrown as generic Errors from stytchFetch
-      // Format: "Stytch API error: {error_type} - {error_message} ({status_code})"
-      if (error.message.includes("Stytch API error")) {
-        const lowerMessage = error.message.toLowerCase();
-        // Check for authentication-related errors
-        if (
-          lowerMessage.includes("invalid_session") ||
-          lowerMessage.includes("unauthorized_credentials") ||
-          lowerMessage.includes("unauthorized") ||
-          lowerMessage.includes("(401)") ||
-          lowerMessage.includes("(403)") ||
-          lowerMessage.includes("session_not_found") ||
-          lowerMessage.includes("intermediate_session_not_found")
-        ) {
-          status = 401;
-          message = "Invalid session";
-        }
+      if (isStytchAuthError(error)) {
+        status = 401;
+        message = "Invalid session";
       }
     }
 
