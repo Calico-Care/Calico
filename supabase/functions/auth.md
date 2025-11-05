@@ -791,3 +791,254 @@ The function syncs data across multiple tables:
 - **`invitations`** – Used to infer roles for new members (not directly modified by sync)
 
 The sync ensures the local database reflects the current state of organizations and members in Stytch B2B, enabling Calico to maintain accurate organization and member data while respecting Stytch's RBAC permissions.
+
+---
+
+# Stytch Webhooks Edge Function
+
+## Overview
+
+The `stytch-webhooks` edge function in `supabase/functions/stytch-webhooks/index.ts` receives and processes webhooks from Stytch B2B to keep Calico's database synchronized with Stytch B2B events. It is designed to automatically update invitation statuses, membership records, and organization data when changes occur in Stytch B2B, ensuring Calico's database remains consistent with Stytch's authoritative state.
+
+## Responsibilities
+
+- **Webhook signature verification** – Verifies HMAC-SHA256 signatures using the `X-Stytch-Signature` header to ensure webhooks are authentic and untampered
+- **Timestamp freshness validation** – Rejects webhooks with timestamps older than 5 minutes or future timestamps to prevent replay attacks
+- **Idempotency tracking** – Tracks processed events in `webhook_events` table to prevent duplicate processing, even with retries or concurrent deliveries
+- **Event processing** – Processes webhook events based on `object_type` and `action`:
+  - `member.CREATE` – Updates invitation status when a member accepts an invitation
+  - `member.UPDATE` – Syncs member email and `stytch_member_id` changes
+  - `member.DELETE` – Deactivates memberships when members are removed from Stytch
+  - `organization.UPDATE` – Syncs organization name changes from Stytch
+- **Database synchronization** – Updates invitation statuses, membership records, and organization data within tenant context using RLS-aware transactions
+
+## Security Features
+
+### Signature Verification
+
+The function verifies webhook signatures using HMAC-SHA256:
+
+1. **Signature extraction** – Extracts timestamp and signature from `X-Stytch-Signature` header (format: `timestamp,signature`)
+2. **Timestamp validation** – Validates timestamp freshness (rejects >5 minutes old or future timestamps)
+3. **HMAC computation** – Computes HMAC-SHA256 signature using `timestamp + "." + payload` as the signed data
+4. **Constant-time comparison** – Uses constant-time string comparison to prevent timing attacks
+5. **Secret handling** – Automatically strips `whsec_` prefix from webhook secrets if present
+
+### Timestamp Freshness
+
+- Rejects webhooks with timestamps older than 5 minutes (replay attack prevention)
+- Rejects future timestamps (clock skew detection)
+- Validates timestamp format before signature verification
+
+### Parameterized Queries
+
+- Uses `setOrgContext()` helper with `set_config()` for parameterized org context setting
+- Prevents SQL injection risks from manual string interpolation
+- All database operations use parameterized queries
+
+## Idempotency
+
+The function implements idempotency to ensure events are processed exactly once:
+
+1. **Pre-processing check** – Checks if event already exists in `webhook_events` table before processing
+2. **Post-processing recording** – Records event as processed only after successful processing (allows retries on failure)
+3. **Duplicate detection** – If duplicate event detected, returns success without reprocessing
+4. **Concurrent handling** – Handles concurrent processing gracefully (if two threads process simultaneously, only one succeeds)
+
+**Why post-processing recording?** Recording the event after processing ensures failed events can be retried. If recording happened before processing, a processing failure would leave a stale marker preventing retries.
+
+## Event Processing
+
+### Member Events
+
+#### `member.CREATE` (Member Created)
+
+When a member accepts an invitation in Stytch B2B:
+
+1. Finds the organization by Stytch organization ID
+2. Updates invitation status from `pending` to `accepted` for matching email and organization
+3. Uses tenant context (`SET LOCAL app.org_id`) to ensure RLS policies allow updates
+
+**Example flow:**
+- Admin invites clinician via `staff-invite-admin` or `staff-invite-clinician`
+- Invitation created with `status = 'pending'`
+- Clinician receives email and accepts invitation in Stytch
+- Stytch sends `member.CREATE` webhook
+- Function updates invitation status to `accepted`
+
+#### `member.UPDATE` (Member Updated)
+
+When a member's details change in Stytch B2B:
+
+1. Finds the organization by Stytch organization ID
+2. Updates user email if changed (in `users` table)
+3. Updates `stytch_member_id` in `memberships` table (matches by `user_id` or email)
+4. Uses tenant context for membership updates
+
+**Fields synced:**
+- User email address
+- Stytch member ID in memberships
+
+#### `member.DELETE` (Member Deleted)
+
+When a member is removed from Stytch B2B:
+
+1. Finds membership(s) by `stytch_member_id` using SECURITY DEFINER function
+2. Deactivates membership (sets `status = 'inactive'`)
+3. Preserves historical data (does not delete records)
+4. Uses tenant context for each organization the member belonged to
+
+**Note:** Memberships are deactivated, not deleted, preserving audit trails.
+
+### Organization Events
+
+#### `organization.UPDATE` (Organization Updated)
+
+When an organization's name changes in Stytch B2B:
+
+1. Finds organization by Stytch organization ID
+2. Compares organization name with local database
+3. Updates organization name if different using `admin.update_organization()` SECURITY DEFINER function
+4. Logs name changes for audit purposes
+
+**Note:** Organization creation is handled by `orgs-create` edge function, not webhooks.
+
+## Transaction Safety
+
+All database operations run within transactions:
+
+- **Transaction helpers** – Uses `withTransaction()` helper for proper BEGIN/COMMIT/ROLLBACK lifecycle
+- **Rollback safety** – Only attempts ROLLBACK if BEGIN succeeded (prevents misleading errors)
+- **Tenant context** – Sets `SET LOCAL app.org_id` within transactions using `setOrgContext()` helper
+- **Atomic operations** – Updates are atomic - either all succeed or all roll back
+
+## Request Format
+
+Stytch sends webhooks with the following format:
+
+```ts
+// Webhook payload
+type StytchWebhookEvent = {
+  project_id: string;
+  event_id: string; // Unique identifier for this event (used for idempotency)
+  action: "CREATE" | "UPDATE" | "DELETE";
+  object_type: "member" | "organization";
+  id: string; // Stytch ID (member_id or organization_id)
+  timestamp: string; // ISO timestamp
+  member?: StytchWebhookMember; // Present for member events
+  organization?: StytchWebhookOrganization; // Present for organization events
+};
+
+type StytchWebhookMember = {
+  member_id: string;
+  email_address?: string;
+  organization_id?: string;
+  user_id?: string;
+};
+
+type StytchWebhookOrganization = {
+  organization_id: string;
+  organization_name?: string;
+  organization_slug?: string;
+};
+
+// Headers
+X-Stytch-Signature: <timestamp>,<hmac_signature>
+Content-Type: application/json
+```
+
+## Return Value
+
+```ts
+type WebhookResponse = {
+  ok: true;
+  event_id: string; // Echo of the processed event ID
+};
+```
+
+Stytch expects a 200 OK response to acknowledge successful processing. Failed events can be retried by Stytch.
+
+## Error Handling
+
+- **401 Unauthorized** – Invalid or missing webhook signature, stale timestamp (>5 minutes), or future timestamp
+- **400 Bad Request** – Invalid webhook payload format or validation errors
+- **500 Internal Server Error** – Database errors, organization not found, or other unexpected failures
+
+**Note:** The function always returns 200 OK for duplicate events (idempotency), even if processing was skipped.
+
+## Important Notes
+
+- **Webhook secret** – Requires `STYTCH_WEBHOOK_SECRET` environment variable (may include `whsec_` prefix, which is automatically stripped)
+- **Idempotency** – Events are recorded after successful processing, allowing retries on failure
+- **Tenant isolation** – All database operations use tenant context (`SET LOCAL app.org_id`) to ensure RLS policies are respected
+- **Transaction safety** – Database updates run within transactions to ensure atomicity
+- **SECURITY DEFINER functions** – Uses `admin.list_organizations()` and `admin.update_organization()` to bypass RLS for organization lookups
+- **CORS support** – Handles CORS preflight requests (OPTIONS) for browser-based webhook testing
+- **Error logging** – All errors are logged with details for debugging and monitoring
+
+## Typical Usage Flow
+
+1. **Invitation sent** – Admin invites clinician via `staff-invite-admin` or `staff-invite-clinician`
+2. **Invitation pending** – Invitation record created with `status = 'pending'`
+3. **Email received** – Clinician receives invitation email from Stytch
+4. **Invitation accepted** – Clinician clicks invitation link and completes Stytch B2B authentication
+5. **Webhook triggered** – Stytch sends `member.CREATE` webhook to `stytch-webhooks` function
+6. **Signature verified** – Function verifies HMAC signature and timestamp freshness
+7. **Idempotency checked** – Function checks if event already processed
+8. **Event processed** – Function updates invitation status from `pending` to `accepted`
+9. **Event recorded** – Function records event in `webhook_events` table
+10. **Success response** – Function returns 200 OK with event ID
+
+If processing fails, Stytch will retry the webhook. The post-processing idempotency check ensures retries don't cause duplicate processing.
+
+## Database Schema
+
+The function uses the following tables:
+
+### `webhook_events` (Idempotency Tracking)
+
+- `id` – UUID primary key (generated)
+- `event_id` – Unique Stytch event ID (unique constraint)
+- `event_type` – Event type (e.g., `member.CREATE`, `member.UPDATE`)
+- `processed_at` – Timestamp of processing
+- `created_at` – Timestamp of record creation
+
+### `invitations` (Updated by `member.CREATE`)
+
+- `status` – Updated from `pending` to `accepted` when member accepts invitation
+- Updated within tenant context using RLS
+
+### `memberships` (Updated by `member.UPDATE` and `member.DELETE`)
+
+- `stytch_member_id` – Updated when member details change
+- `status` – Updated to `inactive` when member is deleted
+- Updated within tenant context using RLS
+
+### `users` (Updated by `member.UPDATE`)
+
+- `email` – Updated when member email changes in Stytch
+- No RLS (updated directly)
+
+### `organizations` (Updated by `organization.UPDATE`)
+
+- `name` – Updated when organization name changes in Stytch
+- Updated using SECURITY DEFINER function to bypass RLS
+
+## Configuration
+
+The function requires the following environment variable:
+
+- `STYTCH_WEBHOOK_SECRET` – Stytch webhook secret (may include `whsec_` prefix, which is automatically stripped)
+
+The webhook endpoint URL should be configured in Stytch dashboard to point to:
+
+## Testing
+
+The function can be tested by:
+
+1. **Signature validation** – Invalid signatures return 401 Unauthorized
+2. **Timestamp validation** – Stale or future timestamps are rejected
+3. **Idempotency** – Duplicate events return 200 OK without reprocessing
+4. **Event processing** – Valid events update database records correctly
+
+All security checks are tested and verified to work correctly.

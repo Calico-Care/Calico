@@ -93,9 +93,26 @@ export const StytchB2BInviteResponseSchema = z.object({
     })
     .optional(),
   email_address: z.string().optional(),
-});
+}).passthrough(); // Allow extra fields
 export type StytchB2BInviteResponse = z.infer<
   typeof StytchB2BInviteResponseSchema
+>;
+
+export const StytchB2BSendInviteEmailResponseSchema = z.object({
+  status_code: z.number(),
+  request_id: z.string(),
+  member_id: z.string(),
+  member: StytchB2BMemberSchema.optional(),
+  organization: z
+    .object({
+      organization_id: z.string(),
+      organization_name: z.string(),
+      organization_slug: z.string(),
+    })
+    .optional(),
+}).passthrough(); // Allow extra fields
+export type StytchB2BSendInviteEmailResponse = z.infer<
+  typeof StytchB2BSendInviteEmailResponseSchema
 >;
 
 export const StytchB2BMemberSessionSchema = z.object({
@@ -330,6 +347,42 @@ export const stytchB2B = {
         }),
       },
       StytchB2BInviteResponseSchema
+    );
+  },
+
+  /**
+   * Send a magic link invitation email to a B2B member
+   * This sends the actual email invitation (inviteMember only creates the member)
+   * NOTE: Works with API secret authentication (no member session required).
+   * RBAC is only enforced when a member session is passed in headers.
+   * IMPORTANT: Stytch requires billing verification to send emails to external domains.
+   * Same-domain emails work without billing verification.
+   * @param organizationId - Stytch organization ID
+   * @param email - Email address of the member to invite
+   * @param name - Optional display name
+   * @param roles - Optional array of Stytch RBAC roles
+   * @param inviteRedirectUrl - Optional URL to redirect to after accepting the invite
+   */
+  async sendInviteEmail(
+    organizationId: string,
+    email: string,
+    name?: string,
+    roles?: string[],
+    inviteRedirectUrl?: string
+  ): Promise<StytchB2BSendInviteEmailResponse> {
+    return stytchFetch(
+      `/b2b/magic_links/email/invite`,
+      {
+        method: "POST",
+        body: JSON.stringify({
+          organization_id: organizationId,
+          email_address: email,
+          name: name || undefined,
+          roles: roles || [],
+          invite_redirect_url: inviteRedirectUrl || undefined,
+        }),
+      },
+      StytchB2BSendInviteEmailResponseSchema
     );
   },
 

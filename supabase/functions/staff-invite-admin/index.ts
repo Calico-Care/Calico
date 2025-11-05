@@ -107,24 +107,161 @@ serve(async (req: Request) => {
       );
     }
 
-    // Invite member via Stytch B2B API
+    // Create pending member via Stytch B2B API
     // Assign 'stytch_admin' role so org admin can invite clinicians
-    const stytchResponse = await stytchB2B.inviteMember(
-      stytch_organization_id,
-      email,
-      name,
-      ["stytch_admin"]
-    );
+    let stytch_member_id: string | undefined;
+    let stytchResponse: { member_id: string } | undefined;
+    
+    try {
+      stytchResponse = await stytchB2B.inviteMember(
+        stytch_organization_id,
+        email,
+        name,
+        ["stytch_admin"]
+      );
+      if (!stytchResponse?.member_id) {
+        throw new Error("Missing member_id from Stytch invite response");
+      }
+      stytch_member_id = stytchResponse.member_id;
+    } catch (error) {
+      // Handle duplicate member error - member already exists
+      if (
+        error instanceof Error &&
+        (error.message.includes("duplicate_member_email") ||
+          error.message.includes("already exists"))
+      ) {
+        // Try to find member_id from our database first
+        // Check invitations table for existing pending invitation
+        const inviteResult = await withTenant(
+          org_id,
+          (c: PoolClient) =>
+            c.queryObject<{ stytch_invitation_id: string | null }>(
+              `SELECT stytch_invitation_id FROM invitations 
+               WHERE org_id = $1 AND email = $2 AND role = 'org_admin' AND status = 'pending'
+               LIMIT 1`,
+              [org_id, email]
+            )
+        );
 
-    // member_id is always present at the top level of the response
-    const stytch_member_id = stytchResponse.member_id;
-    const stytch_invitation_id = stytch_member_id; // Stytch returns member_id on invite
+        if (inviteResult.rows.length > 0 && inviteResult.rows[0].stytch_invitation_id) {
+          stytch_member_id = inviteResult.rows[0].stytch_invitation_id;
+        } else {
+          // Check memberships table for existing member
+          const dbMemberResult = await withTenant(
+            org_id,
+            (c: PoolClient) =>
+              c.queryObject<{ stytch_member_id: string }>(
+                `SELECT stytch_member_id FROM memberships 
+                 WHERE org_id = $1 AND user_id IN (
+                   SELECT id FROM users WHERE email = $2
+                 )
+                 LIMIT 1`,
+                [org_id, email]
+              )
+          );
+
+          if (dbMemberResult.rows.length > 0 && dbMemberResult.rows[0].stytch_member_id) {
+            stytch_member_id = dbMemberResult.rows[0].stytch_member_id;
+          } else {
+            // If not in database, try searching Stytch (with pagination)
+            // Note: This may fail if searchMembers requires RBAC auth
+            let foundMember = false;
+            let cursor: string | null | undefined = undefined;
+            
+            for (let attempt = 0; attempt < 10 && !foundMember; attempt++) {
+              try {
+                const searchResult = await stytchB2B.searchMembers(
+                  [stytch_organization_id],
+                  100,
+                  undefined,
+                  cursor
+                );
+                
+                const existingMember = searchResult.members.find(
+                  (m) => m.email_address?.toLowerCase() === email.toLowerCase()
+                );
+                
+                if (existingMember && existingMember.member_id) {
+                  stytch_member_id = existingMember.member_id;
+                  foundMember = true;
+                  break;
+                }
+                
+                cursor = searchResult.results_metadata?.next_cursor;
+                if (!cursor) break;
+              } catch (searchError) {
+                // If searchMembers fails (e.g., requires RBAC), skip Stytch search
+                console.warn(
+                  `Failed to search Stytch members: ${searchError instanceof Error ? searchError.message : String(searchError)}`
+                );
+                break;
+              }
+            }
+            
+            if (!foundMember || !stytch_member_id) {
+              throw new Error(
+                `Member with email ${email} exists in Stytch but could not be found. Please invite them manually via Stytch dashboard, or use an existing invitation.`
+              );
+            }
+          }
+        }
+        
+        // Try to send invite email for existing member using sendInviteEmail
+        // Works with API secret auth (RBAC is only enforced when member session is passed)
+        // NOTE: Stytch requires billing verification to send emails to external domains
+        if (stytch_member_id) {
+          try {
+            console.log(`Attempting to send invite email to existing member: ${stytch_member_id} (email: ${email})`);
+            await stytchB2B.sendInviteEmail(
+              stytch_organization_id,
+              email,
+              name,
+              ["stytch_admin"]
+            );
+            console.log(`Successfully sent invite email to existing member: ${stytch_member_id}`);
+          } catch (emailError) {
+            // If sendInviteEmail fails (e.g., requires RBAC auth), log but continue
+            console.error(
+              `Failed to send invite email for existing member: ${emailError instanceof Error ? emailError.message : String(emailError)}`,
+              emailError instanceof Error ? emailError.stack : undefined
+            );
+          }
+        }
+      } else {
+        // Re-throw other errors
+        throw error;
+      }
+    }
 
     if (!stytch_member_id) {
       throw new Error("Missing member_id from Stytch invite response");
     }
 
-    // Insert invitation record using withTenant to satisfy RLS
+    // Send the actual invitation email (if member was just created)
+    // For existing members, we already tried above
+    // Works with API secret auth (RBAC is only enforced when member session is passed)
+    // NOTE: Stytch requires billing verification to send emails to external domains
+    if (stytchResponse) {
+      try {
+        console.log(`Attempting to send invite email to new member: ${stytch_member_id} (email: ${email})`);
+        await stytchB2B.sendInviteEmail(
+          stytch_organization_id,
+          email,
+          name,
+          ["stytch_admin"]
+        );
+        console.log(`Successfully sent invite email to new member: ${stytch_member_id}`);
+      } catch (emailError) {
+        // If sendInviteEmail fails (e.g., requires RBAC auth), log but continue
+        // The member was created, so we can still return success
+        console.error(
+          `Failed to send invite email: ${emailError instanceof Error ? emailError.message : String(emailError)}`,
+          emailError instanceof Error ? emailError.stack : undefined
+        );
+      }
+    }
+
+    // Insert or update invitation record using withTenant to satisfy RLS
     const invitationResult = await withTenant(
       org_id,
       (c: PoolClient) =>
@@ -138,6 +275,8 @@ serve(async (req: Request) => {
             invited_by
           )
           VALUES ($1, $2, 'org_admin', $3, 'pending', NULL)
+          ON CONFLICT (org_id, email, role) WHERE status = 'pending'
+          DO UPDATE SET stytch_invitation_id = EXCLUDED.stytch_invitation_id
           RETURNING id`,
           [org_id, email, stytch_member_id]
         )

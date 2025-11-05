@@ -16,6 +16,49 @@ export async function withConn<T>(
   }
 }
 
+/**
+ * Set the organization context for RLS using a parameterized query
+ * Uses set_config() which supports parameters and sets the value locally to the transaction
+ * @param conn - Database connection client
+ * @param orgId - Organization ID (UUID)
+ */
+export async function setOrgContext(conn: PoolClient, orgId: string): Promise<void> {
+  await conn.queryObject(
+    `SELECT set_config('app.org_id', $1, true)`,
+    [orgId]
+  );
+}
+
+/**
+ * Execute a callback within a transaction, handling BEGIN/COMMIT/ROLLBACK lifecycle
+ * ROLLBACK is only attempted if BEGIN succeeded, preventing misleading error messages
+ * @param conn - Database connection client
+ * @param cb - Callback to execute within the transaction
+ * @returns Result of the callback
+ */
+export async function withTransaction<T>(
+  conn: PoolClient,
+  cb: (conn: PoolClient) => Promise<T> | T
+): Promise<T> {
+  let transactionStarted = false;
+  try {
+    await conn.queryObject("BEGIN");
+    transactionStarted = true;
+    const result = await cb(conn);
+    await conn.queryObject("COMMIT");
+    return result;
+  } catch (error) {
+    if (transactionStarted) {
+      try {
+        await conn.queryObject("ROLLBACK");
+      } catch (rollbackErr) {
+        console.error("Failed to rollback transaction:", rollbackErr);
+      }
+    }
+    throw error;
+  }
+}
+
 export async function withTenant<T>(
   orgId: string,
   cb: (conn: PoolClient) => Promise<T> | T,
