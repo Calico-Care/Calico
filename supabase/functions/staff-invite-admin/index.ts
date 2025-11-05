@@ -77,10 +77,11 @@ serve(async (req: Request) => {
           name: string;
           stytch_organization_id: string;
           created_at: Date;
-        }>`
-          SELECT id, name, stytch_organization_id, created_at
-          FROM admin.get_organization(${org_id}::uuid)
-        `
+        }>(
+          `SELECT id, name, stytch_organization_id, created_at
+           FROM admin.get_organization($1::uuid)`,
+          [org_id]
+        )
     );
 
     if (orgResult.rows.length === 0) {
@@ -127,8 +128,8 @@ serve(async (req: Request) => {
     const invitationResult = await withTenant(
       org_id,
       (c: PoolClient) =>
-        c.queryObject<{ id: string }>`
-          INSERT INTO invitations (
+        c.queryObject<{ id: string }>(
+          `INSERT INTO invitations (
             org_id,
             email,
             role,
@@ -136,16 +137,10 @@ serve(async (req: Request) => {
             status,
             invited_by
           )
-          VALUES (
-            ${org_id},
-            ${email},
-            'org_admin',
-            ${stytch_member_id},
-            'pending',
-            NULL
-          )
-          RETURNING id
-        `
+          VALUES ($1, $2, 'org_admin', $3, 'pending', NULL)
+          RETURNING id`,
+          [org_id, email, stytch_member_id]
+        )
     );
 
     const invitation_id = invitationResult.rows[0]?.id;

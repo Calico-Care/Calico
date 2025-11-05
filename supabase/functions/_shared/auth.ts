@@ -94,19 +94,26 @@ export async function authenticateStaff(sessionJwt: string): Promise<StaffAuthRe
     throw error;
   }
   
-  if (!authResponse.session || !authResponse.member || !authResponse.organization_id) {
+  if (!authResponse.member_session || !authResponse.member) {
     throw new StaffAuthError("Invalid session", "INVALID_SESSION");
   }
 
-  const stytchUserId = authResponse.session.user_id;
-  const stytchMemberId = authResponse.session.member_id;
-  const stytchOrganizationId = authResponse.organization_id;
+  // Get organization_id from member_session (fallback to member if needed)
+  const stytchOrganizationId = authResponse.member_session.organization_id || authResponse.member.organization_id || authResponse.organization_id;
+  if (!stytchOrganizationId) {
+    throw new StaffAuthError("Invalid session: missing organization_id", "INVALID_SESSION");
+  }
+
+  // For B2B members, use member_id as the user identifier
+  // Some members may have an underlying user_id, but member_id is always present
+  const stytchUserId = authResponse.member.user_id || authResponse.member.member_id;
+  const stytchMemberId = authResponse.member_session.member_id;
   const email = authResponse.member.email_address;
 
-  // Map Stytch organization to our org_id
+  // Map Stytch organization to our org_id using SECURITY DEFINER function to bypass RLS
   const orgResult = await withConn(async (conn) => {
-    return conn.queryObject<{ org_id: string }>(
-      "SELECT id as org_id FROM organizations WHERE stytch_organization_id = $1",
+    return conn.queryObject<{ id: string }>(
+      `SELECT id FROM admin.list_organizations() WHERE stytch_organization_id = $1`,
       [stytchOrganizationId]
     );
   });
@@ -115,11 +122,14 @@ export async function authenticateStaff(sessionJwt: string): Promise<StaffAuthRe
     throw new StaffAuthError("Organization not found", "ORGANIZATION_NOT_FOUND");
   }
 
-  const orgId = orgResult.rows[0].org_id;
+  const orgId = orgResult.rows[0].id;
 
   // DB operations: synchronize state
   const result = await withConn(async (conn) => {
     await conn.queryObject("BEGIN");
+    await conn.queryObject("SET LOCAL search_path = public");
+    // SET LOCAL requires literal value, not parameterized (orgId is safe as it comes from DB query)
+    await conn.queryObject(`SET LOCAL app.org_id = '${orgId.replace(/'/g, "''")}'`);
     try {
       // Upsert user
       const userResult = await conn.queryObject<{ user_id: string }>(

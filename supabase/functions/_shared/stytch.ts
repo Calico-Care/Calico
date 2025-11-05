@@ -52,8 +52,33 @@ export const StytchB2BMemberSchema = z.object({
   member_id: z.string(),
   email_address: z.string(),
   organization_id: z.string(),
-});
+  status: z.string().optional(), // 'pending' | 'active' | 'inactive'
+  name: z.string().optional(),
+  user_id: z.string().optional(),
+}).passthrough(); // Allow extra fields
 export type StytchB2BMember = z.infer<typeof StytchB2BMemberSchema>;
+
+export const StytchB2BListOrganizationsResponseSchema = z.object({
+  organizations: z.array(StytchB2BOrganizationSchema),
+  results_metadata: z.object({
+    total: z.number(),
+    next_cursor: z.string().nullable().optional(),
+  }).optional(),
+});
+export type StytchB2BListOrganizationsResponse = z.infer<
+  typeof StytchB2BListOrganizationsResponseSchema
+>;
+
+export const StytchB2BListMembersResponseSchema = z.object({
+  members: z.array(StytchB2BMemberSchema),
+  results_metadata: z.object({
+    total: z.number(),
+    next_cursor: z.string().nullable().optional(),
+  }).optional(),
+}).passthrough(); // Allow extra fields at top level
+export type StytchB2BListMembersResponse = z.infer<
+  typeof StytchB2BListMembersResponseSchema
+>;
 
 export const StytchB2BInviteResponseSchema = z.object({
   status_code: z.number(),
@@ -73,19 +98,27 @@ export type StytchB2BInviteResponse = z.infer<
   typeof StytchB2BInviteResponseSchema
 >;
 
-export const StytchB2BSessionSchema = z.object({
-  session_id: z.string(),
+export const StytchB2BMemberSessionSchema = z.object({
+  member_session_id: z.string(),
   member_id: z.string(),
   organization_id: z.string(),
-  user_id: z.string(),
-});
-export type StytchB2BSession = z.infer<typeof StytchB2BSessionSchema>;
+  started_at: z.string().optional(),
+  last_accessed_at: z.string().optional(),
+  expires_at: z.string().optional(),
+  roles: z.array(z.string()).optional(),
+}).passthrough(); // Allow extra fields
+export type StytchB2BMemberSession = z.infer<typeof StytchB2BMemberSessionSchema>;
 
 export const StytchB2BAuthenticateResponseSchema = z.object({
-  session: StytchB2BSessionSchema.optional(),
+  member_session: StytchB2BMemberSessionSchema.optional(),
   member: StytchB2BMemberSchema.optional(),
   organization_id: z.string().optional(),
-});
+  organization: z.object({
+    organization_id: z.string(),
+    organization_name: z.string(),
+    organization_slug: z.string(),
+  }).optional(),
+}).passthrough(); // Allow extra fields
 export type StytchB2BAuthenticateResponse = z.infer<
   typeof StytchB2BAuthenticateResponseSchema
 >;
@@ -224,8 +257,21 @@ export async function stytchFetch<T>(
     try {
       return schema.parse(payload);
     } catch (err) {
+      const errorDetails = err instanceof Error ? err.message : String(err);
+      const zodError = err as { issues?: Array<{ path: string[]; message: string }> };
+      const issues = zodError.issues?.map((i) => `${i.path.join('.')}: ${i.message}`).join(', ') || errorDetails;
       console.error("Stytch response validation failed", err);
-      throw new Error("Invalid Stytch API response shape");
+      // Log redacted payload info (counts/types only) to avoid PII exposure
+      // Guard against null/undefined payload to prevent masking original error
+      const safePayload = payload !== null && typeof payload === 'object' ? payload : {};
+      const redactedPayload = {
+        hasMembers: Array.isArray(safePayload.members) ? safePayload.members.length : 0,
+        hasOrganizations: Array.isArray(safePayload.organizations) ? safePayload.organizations.length : 0,
+        hasMetadata: !!safePayload.results_metadata,
+        topLevelKeys: Object.keys(safePayload).filter(k => !['members', 'organizations'].includes(k)),
+      };
+      console.error("Response payload summary:", JSON.stringify(redactedPayload));
+      throw new Error(`Invalid Stytch API response shape: ${issues}`);
     }
   } finally {
     clearTimeout(timeoutId);
@@ -302,6 +348,84 @@ export const stytchB2B = {
         }),
       },
       StytchB2BAuthenticateResponseSchema
+    );
+  },
+
+  /**
+   * Get a B2B organization by ID
+   * @param organizationId - Stytch organization ID
+   * @param sessionJwt - Optional Stytch session JWT for RBAC authentication
+   */
+  async getOrganization(
+    organizationId: string,
+    sessionJwt?: string
+  ): Promise<StytchB2BOrganizationResponse> {
+    const headers: Record<string, string> = {};
+    if (sessionJwt) {
+      headers["X-Stytch-Member-SessionJWT"] = sessionJwt;
+    }
+    
+    return stytchFetch(
+      `/b2b/organizations/${organizationId}`,
+      {
+        method: "GET",
+        headers,
+      },
+      StytchB2BOrganizationResponseSchema
+    );
+  },
+
+  /**
+   * Search members for B2B organizations
+   * Requires at least one organization_id in the organization_ids array
+   * @param organizationIds - Array of organization IDs to search
+   * @param limit - Maximum number of members to return per page
+   * @param sessionJwt - Optional Stytch session JWT for RBAC authentication
+   * @param cursor - Optional cursor for pagination (from previous response's results_metadata.next_cursor)
+   */
+  async searchMembers(
+    organizationIds: string[],
+    limit = 100,
+    sessionJwt?: string,
+    cursor?: string | null
+  ): Promise<StytchB2BListMembersResponse> {
+    // Validate that at least one organization ID is provided
+    if (!Array.isArray(organizationIds) || organizationIds.length === 0) {
+      throw new Error("searchMembers requires at least one non-empty string organization_id in organizationIds");
+    }
+    
+    // Filter out invalid entries: must be strings and non-empty after trimming whitespace
+    const validOrganizationIds = organizationIds
+      .map((id) => typeof id === 'string' ? id.trim() : null)
+      .filter((trimmed): trimmed is string => trimmed !== null && trimmed.length > 0);
+    
+    // Ensure at least one valid organization ID remains
+    if (validOrganizationIds.length === 0) {
+      throw new Error("searchMembers requires at least one non-empty string organization_id in organizationIds");
+    }
+    
+    const headers: Record<string, string> = {};
+    if (sessionJwt) {
+      headers["X-Stytch-Member-SessionJWT"] = sessionJwt;
+    }
+    
+    const body: Record<string, unknown> = {
+      organization_ids: validOrganizationIds,
+      limit,
+    };
+    
+    if (cursor) {
+      body.cursor = cursor;
+    }
+    
+    return stytchFetch(
+      "/b2b/organizations/members/search",
+      {
+        method: "POST",
+        body: JSON.stringify(body),
+        headers,
+      },
+      StytchB2BListMembersResponseSchema
     );
   },
 };

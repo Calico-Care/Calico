@@ -8,18 +8,20 @@ The same file also exports the `isStytchAuthError(error: Error): boolean` utilit
 
 ## Responsibilities
 
-- **Session verification** – Calls `stytchB2B.authenticateSession` with the provided JWT and validates that a member, session, and organization were returned.
-- **Organization mapping** – Resolves Calico's `org_id` by looking up the Stytch organization identifier returned by Stytch.
+- **Session verification** – Calls `stytchB2B.authenticateSession` with the provided JWT and validates that a member, session, and organization were returned. The function correctly handles Stytch B2B authentication responses which include `member_session` (not `session`) and extracts `organization_id` from `member_session.organization_id` with fallbacks.
+- **Organization mapping** – Resolves Calico's `org_id` by looking up the Stytch organization identifier returned by Stytch. Uses the `admin.list_organizations()` SECURITY DEFINER function to bypass Row Level Security (RLS) policies, as the `organizations` table has RLS enabled and direct queries would be blocked.
 - **User synchronization** – Upserts a record in `users` for the Stytch user, ensuring we always have the latest staff email on file.
 - **Membership creation/update** – Runs a transaction that:
+  - Sets tenant context using `SET LOCAL app.org_id` to ensure RLS policies allow querying tenant-scoped tables (`invitations`, `memberships`, `clinicians`)
   - Inserts an active `memberships` row when the user first joins an org.
   - Adds a `clinicians` profile row when the invited role is `clinician`.
   - Marks the pending invitation as `accepted`.
   - Updates `stytch_member_id` if the membership already existed.
+  - Ensures `clinicians` row exists even if membership already exists (handles edge cases)
 
 ## Transactional Safety
 
-All membership, clinician, and invitation updates execute inside an explicit `BEGIN`/`COMMIT` block. Any exception (including network or runtime failures) triggers a rollback so the invitation and membership state cannot diverge.
+All membership, clinician, and invitation updates execute inside an explicit `BEGIN`/`COMMIT` block. The transaction also sets tenant context using `SET LOCAL app.org_id` to ensure Row Level Security (RLS) policies allow querying tenant-scoped tables (`invitations`, `memberships`, `clinicians`). Any exception (including network or runtime failures) triggers a rollback so the invitation and membership state cannot diverge.
 
 ## Return Value
 
@@ -652,3 +654,140 @@ The function queries records from the `invitations` table with the following str
 - `created_at` – Timestamp of invitation creation (used for ordering)
 
 The function returns only staff invitations for the organization, allowing admins to track staff invitation status, see who invited whom, and monitor the organization's staff invitation history. Patient invitations are excluded to comply with HIPAA's Minimum Necessary rule.
+
+---
+
+# Stytch Sync Edge Function
+
+## Overview
+
+The `stytch-sync` edge function in `supabase/functions/stytch-sync/index.ts` synchronizes Stytch B2B organization and member data with Calico's local database. It is designed for server-to-server operations where organization administrators need to ensure their local database reflects the current state of members in Stytch B2B. The function requires an authenticated org_admin session JWT to enforce RBAC (Role-Based Access Control) for Stytch API calls.
+
+## Responsibilities
+
+- **HTTP endpoint handling** – Accepts POST requests with `Authorization: Bearer <CALICO_OPS_TOKEN>` header and JSON body containing an authenticated org_admin session JWT
+- **Calico ops authentication** – Verifies the request is authorized using `CALICO_OPS_TOKEN` environment variable (server-to-server authentication)
+- **Staff session authentication** – Authenticates the provided `session_jwt` using `authenticateStaff()` helper and verifies the user is an `org_admin`
+- **Organization sync** – Fetches organization details from Stytch B2B using RBAC-authenticated API calls and updates local database if organization name differs
+- **Member sync** – Fetches members from Stytch B2B using RBAC-authenticated API calls and synchronizes:
+  - `users` table (upserts based on Stytch `user_id`)
+  - `memberships` table (creates or updates with Stytch `member_id` and status)
+  - `clinicians` table (ensures clinician rows exist for clinician role members)
+  - `invitations` table (uses pending invitations to infer roles for new members)
+- **Error handling** – Reports per-organization sync failures without failing the entire operation
+
+## Authentication and Authorization
+
+The function uses a two-layer authentication model:
+
+1. **Calico ops token** – Required in the `Authorization` header to ensure only authorized server-to-server clients can trigger syncs
+2. **Stytch member session JWT** – Required in the request body (`session_jwt` field) from an authenticated `org_admin`. This session JWT is used for RBAC-authenticated Stytch API calls, ensuring the sync respects Stytch's role-based permissions
+
+**Why RBAC authentication?** Stytch B2B API endpoints for searching members (`/b2b/organizations/members/search`) require RBAC authentication (member session JWT) rather than just API secret authentication. This ensures that only authorized members can query organization data, enforcing Stytch's permission model.
+
+## Operation Order
+
+The function follows a strict operation order:
+
+1. **Authentication** – Verifies Calico ops token and authenticates the staff session JWT
+2. **Authorization** – Verifies the authenticated user is an `org_admin`
+3. **Organization lookup** – Fetches organization details from local database using `admin.list_organizations()` SECURITY DEFINER function
+4. **Organization sync** – Fetches organization details from Stytch B2B using `stytchB2B.getOrganization()` with the session JWT for RBAC authentication, compares the organization name with the local record, and updates it using `admin.update_organization()` if different (errors are logged but don't fail the sync)
+5. **Stytch member fetch** – Fetches members from Stytch B2B using `stytchB2B.searchMembers()` with the session JWT for RBAC authentication
+6. **User sync** – Upserts `users` records (no RLS, uses `withConn()`)
+7. **Membership sync** – Syncs `memberships`, `clinicians`, and `invitations` within tenant context (uses `withConn()` with `SET LOCAL app.org_id` for RLS)
+
+## Request Format
+
+```ts
+// Request body
+type SyncRequest = {
+  session_jwt: string; // Stytch B2B session JWT from authenticated org_admin
+  organization_id?: string; // Optional: sync only this organization (must match session's org)
+};
+
+// Headers
+Authorization: Bearer <CALICO_OPS_TOKEN>
+Content-Type: application/json
+```
+
+**Session JWT:**
+- Must be a valid Stytch B2B session JWT from an authenticated `org_admin`
+- Used for RBAC-authenticated Stytch API calls
+- The sync will only process the organization(s) the admin has access to
+
+**Organization ID:**
+- Optional. If provided, syncs only the specified organization
+- Must match the organization from the session JWT (enforced by the function)
+- If not provided, defaults to syncing the organization from the session
+
+## Return Value
+
+```ts
+type SyncResponse = {
+  ok: boolean; // true when errors.length === 0, false when per-org sync errors occur
+  synced_organizations: number; // Number of organizations synced (typically 1)
+  synced_members: number; // Number of members synced (may be 0 if members lack user_id)
+  errors?: string[]; // Optional array of error messages for per-org sync failures
+};
+```
+
+**Member Sync Notes:**
+- Members without a `user_id` in Stytch (pending members) are skipped
+- Only members with a `user_id` are synced to the local database
+- If a member already exists in `memberships`, their `stytch_member_id` and `status` are updated
+- If a member doesn't exist, a new membership is created, inferring the role from pending invitations (defaults to `clinician` if no invitation found)
+- Clinician rows are automatically created for members with `clinician` role
+
+## Error Handling
+
+- **400 Bad Request** – Missing or invalid `session_jwt` field in request body
+- **401 Unauthorized** – Missing or invalid Calico ops token, invalid session JWT (`StaffAuthError` with code `INVALID_SESSION`), or Stytch API authentication errors (detected via `isStytchAuthError()` utility)
+- **403 Forbidden** – Authenticated user does not have `org_admin` role, or requested `organization_id` does not match session's organization
+- **404 Not Found** – Organization not found in local database or organization missing Stytch mapping
+- **405 Method Not Allowed** – Request method is not POST
+- **500 Internal Server Error** – Database errors, Stytch API errors (schema validation failures, network errors), or other unexpected failures
+
+**Note**: Per-organization sync failures are reported in the `errors` array without failing the entire operation. The function returns HTTP 200 (operation-level success) even if some sync operations fail, but sets `ok: false` when `errors.length > 0`. Callers should check the `ok` field and inspect the `errors` array when `ok` is false to handle per-organization failures appropriately.
+
+## Important Notes
+
+- **Calico ops only** – This function is restricted to Calico operations staff via `CALICO_OPS_TOKEN`. It should not be exposed to end users or client applications.
+- **Org admin required** – The provided `session_jwt` must be from an authenticated `org_admin`. The function enforces this authorization check.
+- **RBAC authentication** – Stytch API calls use the provided `session_jwt` in the `X-Stytch-Member-SessionJWT` header for RBAC authentication. This ensures the sync respects Stytch's permission model and only syncs data the admin has access to. Both `getOrganization()` and `searchMembers()` support RBAC authentication.
+- **Tenant isolation** – The function uses `withConn()` with `SET LOCAL app.org_id` to set tenant context for RLS-protected tables (`memberships`, `clinicians`, `invitations`). The `users` table has no RLS and uses `withConn()` directly.
+- **SECURITY DEFINER functions** – Uses `admin.list_organizations()` and `admin.update_organization()` SECURITY DEFINER functions to bypass RLS for organization operations, as the `organizations` table has RLS enabled.
+- **Organization name sync** – The function fetches organization details from Stytch B2B and compares the organization name with the local record. If different, it updates the local database using `admin.update_organization()`. Organization sync errors are logged and added to the `errors` array, setting `ok: false`, but don't change the HTTP status (still 200), allowing member sync to proceed even if organization name sync fails.
+- **Pending members skipped** – Members without a `user_id` in Stytch (pending members) are skipped during sync. Only active members with user accounts are synced.
+- **Role inference** – For new members without existing memberships, the function infers the role from pending invitations. If no invitation is found, defaults to `clinician`.
+- **Idempotency** – The sync is idempotent. Running it multiple times will update existing records without creating duplicates.
+- **Schema validation** – The function includes detailed zod schema validation for Stytch API responses, with error messages that include validation failure details for debugging.
+
+## Typical Usage Flow
+
+1. Calico operations staff needs to sync Stytch B2B data for an organization.
+2. An org admin authenticates with Stytch B2B and receives a `session_jwt`.
+3. The ops tool sends a POST request to the `stytch-sync` edge function with:
+   - `Authorization: Bearer <CALICO_OPS_TOKEN>` header
+   - JSON body containing `{ "session_jwt": "...", "organization_id": "..." }` (organization_id optional)
+4. On success, the edge function:
+   - Verifies Calico ops token and authenticates the session JWT
+   - Verifies the user is an `org_admin`
+   - Fetches organization details from local database
+   - Fetches organization details from Stytch B2B and updates local name if different
+   - Fetches members from Stytch B2B using RBAC-authenticated API calls
+   - Syncs users, memberships, clinicians, and invitations
+   - Returns `{ "ok": true, "synced_organizations": 1, "synced_members": N }` on success, or `{ "ok": false, "synced_organizations": 1, "synced_members": N, "errors": [...] }` if per-org sync errors occurred
+5. The ops tool should check the `ok` field and inspect the `errors` array when `ok` is false to verify sync completion and handle any per-organization failures.
+
+## Database Schema
+
+The function syncs data across multiple tables:
+
+- **`organizations`** – Updates organization name if different from Stytch
+- **`users`** – Upserts based on Stytch `user_id` and email
+- **`memberships`** – Creates or updates with `org_id`, `user_id`, `role`, `status`, and `stytch_member_id`
+- **`clinicians`** – Ensures rows exist for members with `clinician` role
+- **`invitations`** – Used to infer roles for new members (not directly modified by sync)
+
+The sync ensures the local database reflects the current state of organizations and members in Stytch B2B, enabling Calico to maintain accurate organization and member data while respecting Stytch's RBAC permissions.
