@@ -1,4 +1,4 @@
-import { withConn } from "./db.ts";
+import { withConn, setOrgContext, withTransaction } from "./db.ts";
 import { stytchB2B, stytchConsumer } from "./stytch.ts";
 
 export interface StaffAuthResult {
@@ -126,11 +126,10 @@ export async function authenticateStaff(sessionJwt: string): Promise<StaffAuthRe
 
   // DB operations: synchronize state
   const result = await withConn(async (conn) => {
-    await conn.queryObject("BEGIN");
-    await conn.queryObject("SET LOCAL search_path = public");
-    // SET LOCAL requires literal value, not parameterized (orgId is safe as it comes from DB query)
-    await conn.queryObject(`SET LOCAL app.org_id = '${orgId.replace(/'/g, "''")}'`);
-    try {
+    await withTransaction(conn, async (conn) => {
+      await conn.queryObject("SET LOCAL search_path = public");
+      await setOrgContext(conn, orgId);
+      
       // Upsert user
       const userResult = await conn.queryObject<{ user_id: string }>(
         `INSERT INTO users (stytch_user_id, email)
@@ -211,16 +210,8 @@ export async function authenticateStaff(sessionJwt: string): Promise<StaffAuthRe
         }
       }
 
-      await conn.queryObject("COMMIT");
       return { user_id: userId, org_id: orgId, role, email, stytch_member_id: stytchMemberId };
-    } catch (error) {
-      try {
-        await conn.queryObject("ROLLBACK");
-      } catch (rollbackErr) {
-        console.error("rollback failed", rollbackErr);
-      }
-      throw error;
-    }
+    });
   });
 
   return result;

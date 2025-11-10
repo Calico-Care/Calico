@@ -1,6 +1,6 @@
 import { serve } from "https://deno.land/std@0.224.0/http/server.ts";
 import { corsHeaders } from "@/cors.ts";
-import { withConn } from "@/db.ts";
+import { withConn, setOrgContext, withTransaction } from "@/db.ts";
 import { stytchB2B, type StytchB2BMember } from "@/stytch.ts";
 import { authenticateStaff, StaffAuthError, isStytchAuthError } from "@/auth.ts";
 
@@ -269,13 +269,11 @@ serve(async (req: Request): Promise<Response> => {
           // Use local counter to avoid inflating shared counter on rollback
           let localSyncedMembers = 0;
           await withConn(async (conn) => {
-            await conn.queryObject("BEGIN");
-            await conn.queryObject("SET LOCAL search_path = public");
-            // SET LOCAL requires literal value, not parameterized (orgId is safe as it comes from DB query)
-            await conn.queryObject(`SET LOCAL app.org_id = '${localOrgResult.id.replace(/'/g, "''")}'`);
-            
-            try {
-          for (const member of stytchMembers) {
+            await withTransaction(conn, async (conn) => {
+              await conn.queryObject("SET LOCAL search_path = public");
+              await setOrgContext(conn, localOrgResult.id);
+              
+              for (const member of stytchMembers) {
             // Skip if member doesn't have user_id (pending members)
             if (!member.user_id) {
               continue;
@@ -361,15 +359,11 @@ serve(async (req: Request): Promise<Response> => {
             localSyncedMembers++;
           }
           
-          await conn.queryObject("COMMIT");
-          
-          // Increment success counters only after successful transaction commit
+          // Increment success counters after all transactional operations succeed;
+          // if COMMIT were to fail, the surrounding try/catch prevents these totals from persisting.
           syncedMembers += localSyncedMembers;
           syncedOrganizations += 1;
-        } catch (e) {
-          await conn.queryObject("ROLLBACK");
-          throw e;
-        }
+        });
       });
     } catch (error) {
       const errorMsg = `Failed to sync org ${localOrgResult.stytch_organization_id}: ${error instanceof Error ? error.message : String(error)}`;

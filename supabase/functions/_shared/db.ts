@@ -59,6 +59,28 @@ export async function withTransaction<T>(
   }
 }
 
+/**
+ * Set the user context for RLS using a parameterized query
+ * Uses set_config() which supports parameters and sets the value locally to the transaction
+ * @param conn - Database connection client
+ * @param userId - User ID (UUID)
+ */
+export async function setUserContext(conn: PoolClient, userId: string): Promise<void> {
+  await conn.queryObject(
+    `SELECT set_config('app.user_id', $1, true)`,
+    [userId]
+  );
+}
+
+/**
+ * Execute a callback within a transaction with tenant context
+ * Sets organization context (and optionally user context) for RLS
+ * Uses parameterized queries for security
+ * @param orgId - Organization ID (UUID)
+ * @param cb - Callback to execute within the transaction
+ * @param userId - Optional user ID (UUID) to set user context
+ * @returns Result of the callback
+ */
 export async function withTenant<T>(
   orgId: string,
   cb: (conn: PoolClient) => Promise<T> | T,
@@ -66,23 +88,16 @@ export async function withTenant<T>(
 ): Promise<T> {
   const conn = await pool.connect();
   try {
-    await conn.queryObject("BEGIN");
-    await conn.queryObject("SET LOCAL search_path = public");
-    // SET LOCAL requires literal value, not parameterized (orgId is safe as it's validated UUID)
-    await conn.queryObject(`SET LOCAL app.org_id = '${orgId.replace(/'/g, "''")}'`);
-    if (userId) {
-      await conn.queryObject(`SET LOCAL app.user_id = '${userId.replace(/'/g, "''")}'`);
-    }
-    const res = await cb(conn);
-    await conn.queryObject("COMMIT");
-    return res;
-  } catch (e) {
-    try {
-      await conn.queryObject("ROLLBACK");
-    } catch (rollbackErr) {
-      console.error("rollback failed", rollbackErr);
-    }
-    throw e;
+    const result = await withTransaction(conn, async (conn) => {
+      await conn.queryObject("SET LOCAL search_path = public");
+      await setOrgContext(conn, orgId);
+      if (userId) {
+        await setUserContext(conn, userId);
+      }
+      return await cb(conn);
+    });
+    
+    return result;
   } finally {
     conn.release();
   }
