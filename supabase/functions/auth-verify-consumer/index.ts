@@ -1,6 +1,12 @@
 import { serve } from "https://deno.land/std@0.224.0/http/server.ts";
 import { corsHeaders } from "@/cors.ts";
-import { authenticateConsumer, ConsumerAuthError, ConsumerAuthResult, isStytchAuthError } from "@/auth.ts";
+import {
+  authenticateConsumer,
+  ConsumerAuthError,
+  ConsumerAuthResult,
+  isStytchAuthError,
+} from "@/auth.ts";
+import { createVAPIAssistantForPatient } from "@/vapi.ts";
 
 type AuthResponse = ConsumerAuthResult;
 
@@ -36,6 +42,38 @@ serve(async (req: Request): Promise<Response> => {
     // Authenticate consumer user using shared helper
     const result = await authenticateConsumer(sessionJwt);
 
+    // Create VAPI assistant if needed (after auth succeeds)
+    // This happens asynchronously and doesn't block the auth response
+    if (result.kind === "single") {
+      // Single org patient - create assistant if missing
+      createVAPIAssistantForPatient(
+        result.org_id,
+        result.user_id,
+        result.email
+      ).catch((err) => {
+        // Log error but don't fail auth
+        console.error(
+          `Failed to create VAPI assistant for patient ${result.user_id} in org ${result.org_id}:`,
+          err
+        );
+      });
+    } else if (result.kind === "multi") {
+      // Multi-org patient - create assistant for each org if missing
+      for (const orgId of result.org_ids) {
+        createVAPIAssistantForPatient(
+          orgId,
+          result.user_id,
+          result.email
+        ).catch((err) => {
+          // Log error but don't fail auth
+          console.error(
+            `Failed to create VAPI assistant for patient ${result.user_id} in org ${orgId}:`,
+            err
+          );
+        });
+      }
+    }
+
     return new Response(JSON.stringify(result), {
       status: 200,
       headers: { ...corsHeaders, "Content-Type": "application/json" },
@@ -45,6 +83,7 @@ serve(async (req: Request): Promise<Response> => {
       name: error instanceof Error ? error.name : typeof error,
       message: error instanceof Error ? error.message : String(error),
       code: error instanceof ConsumerAuthError ? error.code : undefined,
+      stack: error instanceof Error ? error.stack : undefined,
     });
 
     let status = 500;
@@ -77,8 +116,18 @@ serve(async (req: Request): Promise<Response> => {
       }
     }
 
+    const details =
+      error instanceof ConsumerAuthError
+        ? error.message
+        : error instanceof Error && isStytchAuthError(error)
+          ? "Invalid session"
+          : "An unexpected error occurred";
+
     return new Response(
-      JSON.stringify({ error: message }),
+      JSON.stringify({
+        error: message,
+        details,
+      }),
       {
         status,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
