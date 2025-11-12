@@ -1,5 +1,5 @@
 import { corsHeaders } from "@/cors.ts";
-import { withTenant } from "@/db.ts";
+import { withTenant, withConn } from "@/db.ts";
 import { authenticateStaff, StaffAuthError } from "@/auth.ts";
 import { stytchConsumer } from "@/stytch.ts";
 
@@ -14,6 +14,7 @@ interface InviteResponse {
   ok: true;
   invitation_id: string;
   warning?: string;
+  email_error?: string; // Error message if email sending failed (for debugging)
 }
 
 
@@ -120,13 +121,13 @@ export async function handler(req: Request): Promise<Response> {
     }
 
     // Create invitation record using tenant context
-    // This must succeed before sending the magic link email to avoid sending emails
-    // when database operations fail. The transaction ensures atomicity.
+    // The invitation record is created first, then the magic link is sent outside the transaction
+    // This ensures that if email sending fails, the transaction isn't aborted
     const result = await withTenant(authResult.org_id, async (conn) => {
       // Atomically insert or return existing invitation using INSERT with error handling
       // The partial unique index inv_pending_once_per_role on (org_id, email, role) WHERE status = 'pending'
       // prevents duplicate pending invitations. PostgreSQL's ON CONFLICT doesn't support partial indexes,
-      // so we catch unique violations and query for the existing row.
+      // so we use a SAVEPOINT to handle unique violations without aborting the entire transaction.
       // Store optional patient data (legal_name, dob) in metadata JSONB field
       const metadata: Record<string, unknown> = {};
       if (legal_name !== undefined && legal_name !== null) {
@@ -136,6 +137,10 @@ export async function handler(req: Request): Promise<Response> {
         metadata.dob = dob;
       }
 
+      let invitationId: string;
+      
+      // Use SAVEPOINT to handle unique constraint violations without aborting the transaction
+      await conn.queryObject("SAVEPOINT before_insert");
       try {
         const inviteResult = await conn.queryObject<{ invitation_id: string }>(
           `INSERT INTO invitations (org_id, email, role, invited_by, status, metadata)
@@ -145,9 +150,16 @@ export async function handler(req: Request): Promise<Response> {
         );
 
         if (inviteResult.rows && inviteResult.rows.length > 0) {
-          return { invitation_id: inviteResult.rows[0].invitation_id };
+          invitationId = inviteResult.rows[0].invitation_id;
+          await conn.queryObject("RELEASE SAVEPOINT before_insert");
+          return { invitation_id: invitationId };
+        } else {
+          throw new Error("Failed to create invitation");
         }
       } catch (error) {
+        // Rollback to savepoint to recover from the error
+        await conn.queryObject("ROLLBACK TO SAVEPOINT before_insert");
+        
         // Handle unique constraint violation from partial index (race condition)
         if (
           error instanceof Error &&
@@ -167,7 +179,8 @@ export async function handler(req: Request): Promise<Response> {
                 [authResult.org_id, email, JSON.stringify(metadata)]
               );
               if (updateResult.rows && updateResult.rows.length > 0) {
-                return { invitation_id: updateResult.rows[0].invitation_id };
+                invitationId = updateResult.rows[0].invitation_id;
+                return { invitation_id: invitationId };
               }
             } catch {
               // If update fails, fall through to returning existing invitation
@@ -180,38 +193,54 @@ export async function handler(req: Request): Promise<Response> {
           );
 
           if (existingInvite.rows && existingInvite.rows.length > 0) {
-            return { invitation_id: existingInvite.rows[0].invitation_id };
+            invitationId = existingInvite.rows[0].invitation_id;
+            return { invitation_id: invitationId };
           }
         }
         throw error;
       }
-
-      throw new Error("Failed to create or retrieve invitation");
     });
-
-    // Send magic link via Stytch Consumer API after database operation succeeds
-    // Wrap in try/catch to handle email failures without rolling back the DB record
-    // The invitation record is already committed, so email failures can be retried
-    let emailError: Error | null = null;
-    try {
-      await stytchConsumer.sendMagicLink(email);
-    } catch (error) {
-      emailError = error instanceof Error ? error : new Error(String(error));
-      console.error(
-        `Failed to send magic link email for invitation ${result.invitation_id}:`,
-        emailError.message
-      );
-      // Don't throw - the invitation record is already committed and can be retried
-    }
 
     const response: InviteResponse = {
       ok: true,
       invitation_id: result.invitation_id,
     };
 
+    // Send magic link via Stytch Consumer API AFTER transaction commits
+    // Use a separate connection for PKCE verifier storage
+    // Wrap in try/catch to handle email failures without affecting the invitation record
+    let emailFailed = false;
+    try {
+      await withConn(async (conn) => {
+        await stytchConsumer.sendMagicLink(
+          email,
+          conn,
+          "calico://auth/callback" // Native redirect URL for PKCE support
+        );
+      });
+    } catch (emailError) {
+      // Log the error but don't throw - the invitation record is already committed
+      emailFailed = true;
+      const errorMessage = emailError instanceof Error ? emailError.message : String(emailError);
+      const errorDetails = emailError instanceof Error ? {
+        name: emailError.name,
+        message: emailError.message,
+        stack: emailError.stack,
+      } : emailError;
+      
+      console.error(
+        `Failed to send magic link email for invitation ${result.invitation_id}:`,
+        errorMessage
+      );
+      console.error("Email error details:", errorDetails);
+      
+      // Store error details in response for debugging
+      response.email_error = errorMessage;
+    }
+
     // If email failed, return success but include a warning in the response
     // This allows the caller to retry sending the email if needed
-    if (emailError) {
+    if (emailFailed) {
       return new Response(
         JSON.stringify({
           ...response,
@@ -230,6 +259,11 @@ export async function handler(req: Request): Promise<Response> {
     });
   } catch (error) {
     console.error("Patient invite error:", error);
+    console.error("Error details:", {
+      name: error instanceof Error ? error.name : typeof error,
+      message: error instanceof Error ? error.message : String(error),
+      stack: error instanceof Error ? error.stack : undefined,
+    });
 
     let status = 500;
     let message = "Internal server error";
@@ -249,6 +283,9 @@ export async function handler(req: Request): Promise<Response> {
           status = 500;
           message = "Internal server error";
       }
+    } else if (error instanceof Error) {
+      // Include error message for debugging
+      message = `Internal server error: ${error.message}`;
     }
 
     return new Response(

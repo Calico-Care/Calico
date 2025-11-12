@@ -483,6 +483,9 @@ jobs:
       needs.optimize_ci.result != 'failure' &&
       needs.optimize_ci.outputs.skip == 'false' &&
       needs.detect_changes.outputs.supabase == 'true'
+    env:
+      APP_EDGE_PASSWORD: ${{ secrets.APP_EDGE_PASSWORD != '' && secrets.APP_EDGE_PASSWORD || 'dev_password' }}
+      PGOPTIONS: "-c app.settings.app_edge_password=${{ secrets.APP_EDGE_PASSWORD != '' && secrets.APP_EDGE_PASSWORD || 'dev_password' }}"
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4

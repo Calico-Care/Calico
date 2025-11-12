@@ -6,16 +6,6 @@
 --   supabase start
 --   supabase db reset
 
--- Create roles (idempotent)
-DO $$ BEGIN
-  CREATE ROLE app_edge LOGIN PASSWORD 'dev_password'
-    NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT NOBYPASSRLS;
-EXCEPTION WHEN duplicate_object THEN END $$;
-
-DO $$ BEGIN
-  CREATE ROLE calico_ops_owner NOLOGIN NOINHERIT;
-EXCEPTION WHEN duplicate_object THEN END $$;
-
 -- Base privileges for app_edge (needed for normal DML; RLS still enforces rows)
 GRANT USAGE ON SCHEMA public TO app_edge;
 GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO app_edge;

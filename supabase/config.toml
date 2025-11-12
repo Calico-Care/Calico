@@ -326,3 +326,33 @@ entrypoint = "./functions/orgs-create/index.ts"
 # Specifies static files to be bundled with the function. Supports glob patterns.
 # For example, if you want to serve static HTML pages in your function:
 # static_files = [ "./functions/orgs-create/*.html" ]
+
+[functions.patient-invite]
+enabled = true
+verify_jwt = false
+import_map = "./functions/patient-invite/deno.json"
+entrypoint = "./functions/patient-invite/index.ts"
+
+[functions.auth-verify-consumer]
+enabled = true
+verify_jwt = false
+import_map = "./functions/auth-verify-consumer/deno.json"
+entrypoint = "./functions/auth-verify-consumer/index.ts"
+
+[functions.auth-verify-staff]
+enabled = true
+verify_jwt = false
+import_map = "./functions/auth-verify-staff/deno.json"
+entrypoint = "./functions/auth-verify-staff/index.ts"
+
+[functions.patient-assign-clinician]
+enabled = true
+verify_jwt = false
+import_map = "./functions/patient-assign-clinician/deno.json"
+entrypoint = "./functions/patient-assign-clinician/index.ts"
+
+[functions.patient-unassign-clinician]
+enabled = true
+verify_jwt = false
+import_map = "./functions/patient-unassign-clinician/deno.json"
+entrypoint = "./functions/patient-unassign-clinician/index.ts"

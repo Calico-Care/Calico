@@ -39,7 +39,11 @@ serve(async (req: Request): Promise<Response> => {
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
   } catch (error) {
-    console.error("Staff auth verification error:", error);
+    console.error("Staff auth verification error", {
+      name: error instanceof Error ? error.name : typeof error,
+      message: error instanceof Error ? error.message : String(error),
+      code: error instanceof StaffAuthError ? error.code : undefined,
+    });
 
     let status = 500;
     let message = "Internal server error";

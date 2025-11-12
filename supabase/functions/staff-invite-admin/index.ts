@@ -206,25 +206,45 @@ serve(async (req: Request) => {
           }
         }
         
-        // Try to send invite email for existing member using sendInviteEmail
+        // Try to send magic link for existing member using sendLoginMagicLink (with PKCE support)
         // Works with API secret auth (RBAC is only enforced when member session is passed)
         // NOTE: Stytch requires billing verification to send emails to external domains
+        // NOTE: Native redirect URLs require PKCE, so we use sendLoginMagicLink instead of sendInviteEmail
         if (stytch_member_id) {
           try {
-            console.log(`Attempting to send invite email to existing member: ${stytch_member_id} (email: ${email})`);
-            await stytchB2B.sendInviteEmail(
-              stytch_organization_id,
-              email,
-              name,
-              ["stytch_admin"]
+            console.log(`Attempting to send login magic link to existing member: ${stytch_member_id} (email: ${email})`);
+            // Use native redirect URL for PKCE support
+            // Get a database connection for storing PKCE verifier
+            await withConn(async (conn) => {
+              await stytchB2B.sendLoginMagicLink(
+                stytch_organization_id,
+                email,
+                "calico://auth/callback", // login redirect URL
+                "calico://auth/callback", // signup redirect URL
+                conn // Pass database connection for PKCE verifier storage
+              );
+            });
+            console.log(`Successfully sent login magic link to existing member: ${stytch_member_id}`);
+          } catch (loginError) {
+            // If sendLoginMagicLink fails, try sendInviteEmail as fallback
+            console.warn(
+              `Failed to send login magic link for existing member: ${loginError instanceof Error ? loginError.message : String(loginError)}`
             );
-            console.log(`Successfully sent invite email to existing member: ${stytch_member_id}`);
-          } catch (emailError) {
-            // If sendInviteEmail fails (e.g., requires RBAC auth), log but continue
-            console.error(
-              `Failed to send invite email for existing member: ${emailError instanceof Error ? emailError.message : String(emailError)}`,
-              emailError instanceof Error ? emailError.stack : undefined
-            );
+            try {
+              console.log(`Attempting to send invite email as fallback for existing member: ${stytch_member_id} (email: ${email})`);
+              await stytchB2B.sendInviteEmail(
+                stytch_organization_id,
+                email,
+                name,
+                ["stytch_admin"]
+              );
+              console.log(`Successfully sent invite email to existing member: ${stytch_member_id}`);
+            } catch (emailError) {
+              console.error(
+                `Failed to send invite email for existing member: ${emailError instanceof Error ? emailError.message : String(emailError)}`,
+                emailError instanceof Error ? emailError.stack : undefined
+              );
+            }
           }
         }
       } else {
@@ -237,27 +257,48 @@ serve(async (req: Request) => {
       throw new Error("Missing member_id from Stytch invite response");
     }
 
-    // Send the actual invitation email (if member was just created)
+    // Send the actual magic link (if member was just created)
     // For existing members, we already tried above
     // Works with API secret auth (RBAC is only enforced when member session is passed)
     // NOTE: Stytch requires billing verification to send emails to external domains
+    // NOTE: Native redirect URLs require PKCE, so we use sendLoginMagicLink instead of sendInviteEmail
     if (stytchResponse) {
       try {
-        console.log(`Attempting to send invite email to new member: ${stytch_member_id} (email: ${email})`);
-        await stytchB2B.sendInviteEmail(
-          stytch_organization_id,
-          email,
-          name,
-          ["stytch_admin"]
+        console.log(`Attempting to send login magic link to new member: ${stytch_member_id} (email: ${email})`);
+        // Use native redirect URL for PKCE support
+        // Get a database connection for storing PKCE verifier
+        await withConn(async (conn) => {
+          await stytchB2B.sendLoginMagicLink(
+            stytch_organization_id,
+            email,
+            "calico://auth/callback", // login redirect URL
+            "calico://auth/callback", // signup redirect URL
+            conn // Pass database connection for PKCE verifier storage
+          );
+        });
+        console.log(`Successfully sent login magic link to new member: ${stytch_member_id}`);
+      } catch (loginError) {
+        // If sendLoginMagicLink fails, try sendInviteEmail as fallback
+        console.warn(
+          `Failed to send login magic link: ${loginError instanceof Error ? loginError.message : String(loginError)}`
         );
-        console.log(`Successfully sent invite email to new member: ${stytch_member_id}`);
-      } catch (emailError) {
-        // If sendInviteEmail fails (e.g., requires RBAC auth), log but continue
-        // The member was created, so we can still return success
-        console.error(
-          `Failed to send invite email: ${emailError instanceof Error ? emailError.message : String(emailError)}`,
-          emailError instanceof Error ? emailError.stack : undefined
-        );
+        try {
+          console.log(`Attempting to send invite email as fallback to new member: ${stytch_member_id} (email: ${email})`);
+          await stytchB2B.sendInviteEmail(
+            stytch_organization_id,
+            email,
+            name,
+            ["stytch_admin"]
+          );
+          console.log(`Successfully sent invite email to new member: ${stytch_member_id}`);
+        } catch (emailError) {
+          // If sendInviteEmail also fails, log but continue
+          // The member was created, so we can still return success
+          console.error(
+            `Failed to send invite email: ${emailError instanceof Error ? emailError.message : String(emailError)}`,
+            emailError instanceof Error ? emailError.stack : undefined
+          );
+        }
       }
     }
 

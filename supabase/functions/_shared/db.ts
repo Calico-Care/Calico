@@ -23,9 +23,13 @@ export async function withConn<T>(
  * @param orgId - Organization ID (UUID)
  */
 export async function setOrgContext(conn: PoolClient, orgId: string): Promise<void> {
+  // Validate orgId is not empty before using it
+  if (!orgId || typeof orgId !== 'string' || orgId.trim() === '') {
+    throw new Error(`Invalid orgId provided to setOrgContext: "${orgId}"`);
+  }
   await conn.queryObject(
     `SELECT set_config('app.org_id', $1, true)`,
-    [orgId]
+    [orgId.trim()]
   );
 }
 
